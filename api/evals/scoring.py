@@ -20,9 +20,7 @@ def top_2_accuracy(triples: list[tuple[str, str, str | None]]) -> float:
     """(true, predicted, alternate) — counts a hit on either slot."""
     if not triples:
         return 0.0
-    return sum(1 for t, p, a in triples if t == p or (a is not None and t == a)) / len(
-        triples
-    )
+    return sum(1 for t, p, a in triples if t == p or (a is not None and t == a)) / len(triples)
 
 
 def per_class_f1(pairs: list[tuple[str, str]]) -> dict[str, float]:
@@ -34,9 +32,7 @@ def per_class_f1(pairs: list[tuple[str, str]]) -> dict[str, float]:
         fn = sum(1 for t, p in pairs if t == cls and p != cls)
         precision = tp / (tp + fp) if (tp + fp) else 0.0
         recall = tp / (tp + fn) if (tp + fn) else 0.0
-        scores[cls] = (
-            2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
-        )
+        scores[cls] = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
     return scores
 
 

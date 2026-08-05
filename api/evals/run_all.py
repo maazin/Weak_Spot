@@ -1,7 +1,7 @@
 """Run the evaluation suites, persist to `eval_runs`, and render a PR comment.
 
-    python -m evals.run_all --commit-sha $SHA --report /tmp/evals.md
-    python -m evals.run_all --suites C            # offline-only suite
+python -m evals.run_all --commit-sha $SHA --report /tmp/evals.md
+python -m evals.run_all --suites C            # offline-only suite
 """
 
 from __future__ import annotations
