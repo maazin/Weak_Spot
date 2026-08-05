@@ -9,7 +9,9 @@ app = "weakspot-api"
 primary_region = "iad"
 
 [build]
-  dockerfile = "../api/Dockerfile"
+  # Relative to the repo root, which is the build context — the image needs both api/
+  # and taxonomy/.
+  dockerfile = "api/Dockerfile"
 
 [env]
   ENV = "production"

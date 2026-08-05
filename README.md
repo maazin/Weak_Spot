@@ -158,7 +158,7 @@ Suite D is a hard gate. Any failure blocks merge.
 ## Legal constraint
 
 Problem statements and editorials are copyrighted, and scraping is against the terms of
-the sites that host them. The data model reflects that from the first migration:
+the sites that host them. The data model reflects that in the initial migration:
 
 - `problems` stores **only** slug, title, difficulty, official tag list, and a canonical
   URL. There is no column for a statement or an editorial, and there never will be.
@@ -176,7 +176,7 @@ the sites that host them. The data model reflects that from the first migration:
 
 | Layer | Choice |
 |---|---|
-| Runtime | Python 3.11 |
+| Runtime | Python 3.11+ (3.11 in the image) |
 | API | FastAPI |
 | Orchestration | LangGraph |
 | Models | Claude Haiku 4.5 (cheap tier), Claude Opus 5 (escalation) |
@@ -185,7 +185,8 @@ the sites that host them. The data model reflects that from the first migration:
 | Cache | Redis |
 | Frontend | React + Vite + Tailwind |
 | Tracing | Langfuse |
-| Tests | pytest — **108 passing** |
+| Migrations | Alembic — the app never creates its own schema |
+| Tests | pytest — **116 passing** |
 | CI | GitHub Actions |
 
 **One deliberate deviation from the spec.** The spec lists LangChain as the LLM client.
@@ -205,12 +206,21 @@ sits behind `weakspot/llm.py`, so swapping the client back is a single-file chan
 cp .env.example .env          # fill in keys; it boots without them
 make up                       # postgres + redis
 cd api && python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+make migrate                  # alembic upgrade head — creates the schema
 make seed                     # 205 problems, 50 patterns, 579 links (no keys needed)
 make api                      # http://localhost:8000
 make web                      # http://localhost:5173
 ```
 
 `make seed EMBED=1` additionally computes embeddings once `VOYAGE_API_KEY` is set.
+`make seed` and `make api` both depend on `migrate`, so the explicit step is only needed
+if you want to migrate without doing anything else.
+
+**The app does not create its own tables.** `alembic upgrade head` owns the schema, the
+Docker entrypoint runs it before serving, and `/healthz` reports `schema_current` so a
+deploy that skipped the step is visible immediately rather than failing later at query
+time. A database created before Alembic was introduced needs `make stamp` once to record
+that it is already at head.
 
 Sign in with GitHub, or use the local bypass on the landing page. The bypass mints a
 session without GitHub and **the app refuses to start if it is enabled while
@@ -218,7 +228,7 @@ session without GitHub and **the app refuses to start if it is enabled while
 accepting unauthenticated sessions.
 
 ```bash
-make test          # 108 tests
+make test          # 116 tests, run against migrated schema
 make lint          # ruff + eslint
 make eval          # all four suites (needs ANTHROPIC_API_KEY)
 make eval-offline  # Suite C only — no model calls
@@ -249,6 +259,27 @@ an evidence span against. A signal that cannot be checked against code a user wr
 not belong in the file, and the loader's tests enforce the schema, id/family agreement,
 and that `related_patterns` resolve.
 
+### Curating the pattern-problem links
+
+Links are generated from embedding similarity, or from tag overlap when there are no
+embeddings. Both are approximations, so there is a review loop:
+
+```bash
+python -m weakspot.ingest.seed --review        # exports the top 200 pairs
+# read pair_candidates.yaml, move entries into taxonomy/pair_overrides.yaml
+python -m weakspot.ingest.seed --apply-review
+```
+
+`taxonomy/pair_overrides.yaml` is tracked in git and re-applied on every seed, so a
+reseed never silently discards a human decision. Confirmed pairs are marked `curated`,
+which the generator then leaves alone; rejected pairs are deleted. Tests assert the
+overrides reference real patterns and problems, that no pair is both confirmed and
+rejected, and that the database actually reflects the recorded decisions.
+
+**The current file is a starter set, not the full pass** — ten confirmations and five
+rejections from one review of the strongest and most obviously wrong candidates. The
+remaining ~185 pairs are still un-reviewed.
+
 ---
 
 ## API
@@ -265,14 +296,34 @@ GET    /patterns                       200 -> {patterns[]}
 GET    /patterns/{id}/problems         200 -> {problems[]}
 GET    /me/weak-patterns               200 -> {items[]}
 GET    /problems/search?q=&pattern=&difficulty=&limit=
-GET    /healthz
+GET    /healthz                        includes schema_current (migrations at head)
 GET    /metrics                        Prometheus text
 ```
 
-An **MCP server** is mounted at `/mcp` exposing `search_problems_by_pattern`,
-`get_pattern_taxonomy`, and `get_my_weak_patterns` (the last requires an API token).
-Every tool has a description written for a model to read, constrained argument schemas,
-and responses capped at 20 items.
+### MCP
+
+A real **MCP server** is mounted at `/mcp`, speaking the protocol over Streamable HTTP,
+so any MCP client connects to it directly:
+
+```json
+{
+  "mcpServers": {
+    "weakspot": { "url": "http://localhost:8000/mcp/" }
+  }
+}
+```
+
+Three tools: `search_problems_by_pattern`, `get_pattern_taxonomy`, and
+`get_my_weak_patterns` (the last requires an `Authorization: Bearer` API token). Every
+tool has a description written for a model to read, constrained argument schemas, and
+responses capped at 20 items so a call cannot blow out a client's context.
+
+The tool logic is also mirrored as plain REST under `/api/v1/mcp-tools/` — same
+functions, no JSON-RPC — because a POST is easier to debug against a deployed instance.
+Both surfaces call one implementation, so they cannot drift. The suite covers the real
+protocol path (`initialize` → `tools/list` → `tools/call`), not just the mirror, since a
+broken mount or an unstarted session manager is invisible to the REST tests and is
+exactly what stops a client from connecting.
 
 ### Cost control
 

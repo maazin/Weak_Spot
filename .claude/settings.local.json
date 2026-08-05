@@ -47,7 +47,10 @@
       "Bash(curl -s -o /dev/null -w \"web: %{http_code}\\\\n\" http://localhost:5173/)",
       "Bash(curl -s http://localhost:5173/)",
       "Bash(DATABASE_URL=\"postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot\" ENV=test DEV_AUTH_BYPASS=true .venv/bin/pytest -q)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(pkill -f \"uvicorn weakspot\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(.venv/bin/python -)"
     ]
   }
 }

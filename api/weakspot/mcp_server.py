@@ -1,153 +1,76 @@
-"""MCP server mounted at /mcp — three tools, all responses bounded.
+"""MCP server mounted at /mcp, plus a plain REST mirror for tests and curl.
 
-Tool descriptions are written for a model to read, arguments are constrained, and every
-list is capped at 20 items so a tool call cannot blow out a client's context.
+`/mcp` speaks the real MCP protocol over Streamable HTTP, so Claude Desktop, Cursor and
+any other MCP client can connect to it directly. The REST mirror under
+`/api/v1/mcp-tools` calls exactly the same functions; it exists because exercising a
+JSON-RPC session from the test suite obscures what is being asserted, and because a
+plain POST is easier to debug against a deployed instance.
+
+Both surfaces share the four functions below, so there is one implementation of each
+tool and no way for the two to drift. Tool descriptions are written for a model to read,
+arguments are constrained by schema rather than by prose, and every list is capped so a
+tool call cannot blow out a client's context.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.applications import Starlette
 
 from .config import get_settings
-from .db import get_db
+from .db import SessionLocal, get_db
 from .models import PatternProblem, Problem, User
 from .taxonomy import get_taxonomy
 
-router = APIRouter(prefix="/mcp", tags=["mcp"])
-
 CAP = get_settings().mcp_list_cap
 
-
-class SearchProblemsArgs(BaseModel):
-    pattern_id: str = Field(
-        description="A taxonomy pattern id, e.g. 'implementation.binary_search_bounds_off_by_one'."
-    )
-    difficulty: str | None = Field(
-        default=None, description="Optional filter: 'easy', 'medium', or 'hard'."
-    )
-    limit: int = Field(default=5, ge=1, le=CAP, description=f"Max results, up to {CAP}.")
+Difficulty = Literal["easy", "medium", "hard"]
+Family = Literal["pattern_selection", "implementation", "complexity", "comprehension"]
 
 
-TOOLS: list[dict[str, Any]] = [
-    {
-        "name": "search_problems_by_pattern",
-        "description": (
-            "Find practice problems that exercise a specific conceptual failure pattern "
-            "from the Weakspot taxonomy. Use this when a user has been diagnosed with a "
-            "pattern and wants problems that drill the same idea. Returns problem "
-            "metadata and a link to the original problem — never the problem statement."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "pattern_id": {
-                    "type": "string",
-                    "description": "A taxonomy pattern id. Call get_pattern_taxonomy for valid ids.",
-                },
-                "difficulty": {
-                    "type": "string",
-                    "enum": ["easy", "medium", "hard"],
-                    "description": "Optional difficulty filter.",
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": CAP,
-                    "description": f"Maximum results to return, capped at {CAP}.",
-                },
-            },
-            "required": ["pattern_id"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "get_pattern_taxonomy",
-        "description": (
-            "List the closed set of conceptual failure patterns Weakspot can diagnose, "
-            "grouped into four families: pattern_selection (wrong algorithmic shape), "
-            "implementation (right shape, wrong details), complexity (correct but too "
-            "slow), and comprehension (misread the problem). Call this before "
-            "search_problems_by_pattern to learn the valid pattern ids."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "family": {
-                    "type": "string",
-                    "enum": [
-                        "pattern_selection",
-                        "implementation",
-                        "complexity",
-                        "comprehension",
-                    ],
-                    "description": "Optional: restrict to one family.",
-                }
-            },
-            "additionalProperties": False,
-        },
-    },
-    {
-        "name": "get_my_weak_patterns",
-        "description": (
-            "Return the authenticated user's recurring failure patterns, most frequent "
-            "first, with occurrence counts and when each was last seen. Requires an API "
-            "token. Use this to tailor practice recommendations to what this specific "
-            "user keeps getting wrong."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": CAP,
-                    "description": f"Maximum patterns to return, capped at {CAP}.",
-                }
-            },
-            "additionalProperties": False,
-        },
-    },
-]
+class TokenRequired(Exception):
+    """Raised by the shared logic; each surface renders it in its own idiom."""
 
 
-def _require_token(db: Session, authorization: str | None) -> User:
+# --------------------------------------------------------------------- shared logic
+
+
+def _authenticate(db: Session, authorization: str | None) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="an API token is required")
-    token = authorization[7:].strip()
-    user = db.query(User).filter(User.api_token == token).one_or_none()
+        raise TokenRequired("an API token is required")
+    user = db.query(User).filter(User.api_token == authorization[7:].strip()).one_or_none()
     if user is None:
-        raise HTTPException(status_code=401, detail="invalid API token")
+        raise TokenRequired("invalid API token")
     return user
 
 
-@router.get("/tools")
-def list_tools() -> dict[str, Any]:
-    return {"tools": TOOLS}
-
-
-@router.post("/tools/search_problems_by_pattern")
-def search_problems_by_pattern(
-    args: SearchProblemsArgs, db: Session = Depends(get_db)
+def search_problems(
+    db: Session,
+    pattern_id: str,
+    difficulty: str | None = None,
+    limit: int = 5,
 ) -> dict[str, Any]:
-    if args.pattern_id not in get_taxonomy():
-        raise HTTPException(status_code=400, detail="unknown pattern_id")
+    if pattern_id not in get_taxonomy():
+        raise ValueError("unknown pattern_id")
 
     query = (
         db.query(Problem)
         .join(PatternProblem, PatternProblem.problem_id == Problem.id)
-        .filter(PatternProblem.pattern_id == args.pattern_id)
+        .filter(PatternProblem.pattern_id == pattern_id)
     )
-    if args.difficulty:
-        query = query.filter(Problem.difficulty == args.difficulty)
+    if difficulty:
+        query = query.filter(Problem.difficulty == difficulty)
 
     rows = (
         query.order_by(PatternProblem.curated.desc(), PatternProblem.strength.desc())
-        .limit(min(args.limit, CAP))
+        .limit(max(1, min(limit, CAP)))
         .all()
     )
     return {
@@ -164,10 +87,8 @@ def search_problems_by_pattern(
     }
 
 
-@router.post("/tools/get_pattern_taxonomy")
-def get_pattern_taxonomy(payload: dict | None = None) -> dict[str, Any]:
+def pattern_taxonomy(family: str | None = None) -> dict[str, Any]:
     taxonomy = get_taxonomy()
-    family = (payload or {}).get("family")
     entries = taxonomy.by_family(family) if family else taxonomy.entries
     return {
         "patterns": [
@@ -182,15 +103,7 @@ def get_pattern_taxonomy(payload: dict | None = None) -> dict[str, Any]:
     }
 
 
-@router.post("/tools/get_my_weak_patterns")
-def get_my_weak_patterns(
-    payload: dict | None = None,
-    authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-) -> dict[str, Any]:
-    user = _require_token(db, authorization)
-    limit = min(int((payload or {}).get("limit", 10)), CAP)
-
+def weak_patterns(db: Session, user: User, limit: int = 10) -> dict[str, Any]:
     rows = db.execute(
         text(
             """
@@ -203,7 +116,7 @@ def get_my_weak_patterns(
              LIMIT :limit
             """
         ),
-        {"uid": user.id, "limit": limit},
+        {"uid": user.id, "limit": max(1, min(limit, CAP))},
     ).fetchall()
 
     taxonomy = get_taxonomy()
@@ -219,3 +132,172 @@ def get_my_weak_patterns(
             for pattern_id, occurrences, last_seen in rows
         ]
     }
+
+
+# ------------------------------------------------------------------- MCP protocol
+
+mcp = MCPServer(
+    name="weakspot",
+    title="Weakspot",
+    version="0.1.0",
+    instructions=(
+        "Weakspot diagnoses why a coding-problem attempt failed at the conceptual level "
+        "and recommends problems that drill the same failure pattern. Call "
+        "get_pattern_taxonomy first to learn the valid pattern ids, then "
+        "search_problems_by_pattern to find practice problems. Problem statements are "
+        "never returned — only metadata and a link to the original."
+    ),
+)
+
+
+@mcp.tool(
+    name="search_problems_by_pattern",
+    title="Search problems by failure pattern",
+)
+def _search_problems_by_pattern(
+    pattern_id: Annotated[
+        str,
+        Field(
+            description=(
+                "A taxonomy pattern id, e.g. "
+                "'implementation.binary_search_bounds_off_by_one'. Call "
+                "get_pattern_taxonomy for the valid ids."
+            )
+        ),
+    ],
+    difficulty: Annotated[
+        Difficulty | None, Field(description="Optional difficulty filter.")
+    ] = None,
+    limit: Annotated[
+        int, Field(ge=1, le=CAP, description=f"Maximum results, capped at {CAP}.")
+    ] = 5,
+) -> dict[str, Any]:
+    """Find practice problems that exercise a specific conceptual failure pattern.
+
+    Use this when a user has been diagnosed with a pattern and wants problems that drill
+    the same idea. Returns problem metadata and a link to the original problem — never
+    the problem statement itself.
+    """
+    with SessionLocal() as db:
+        return search_problems(db, pattern_id, difficulty, limit)
+
+
+@mcp.tool(name="get_pattern_taxonomy", title="List the failure-pattern taxonomy")
+def _get_pattern_taxonomy(
+    family: Annotated[Family | None, Field(description="Optional: restrict to one family.")] = None,
+) -> dict[str, Any]:
+    """List the closed set of conceptual failure patterns Weakspot can diagnose.
+
+    Patterns are grouped into four families: pattern_selection (wrong algorithmic shape),
+    implementation (right shape, wrong details), complexity (correct but too slow), and
+    comprehension (misread the problem). Call this before search_problems_by_pattern to
+    learn the valid pattern ids.
+    """
+    return pattern_taxonomy(family)
+
+
+@mcp.tool(name="get_my_weak_patterns", title="Get the caller's recurring weak patterns")
+def _get_my_weak_patterns(
+    ctx: Context,
+    limit: Annotated[
+        int, Field(ge=1, le=CAP, description=f"Maximum patterns, capped at {CAP}.")
+    ] = 10,
+) -> dict[str, Any]:
+    """Return the authenticated user's recurring failure patterns, most frequent first.
+
+    Includes occurrence counts and when each was last seen. Requires an API token sent as
+    an Authorization: Bearer header. Use this to tailor practice recommendations to what
+    this specific user keeps getting wrong.
+    """
+    headers = ctx.headers or {}
+    authorization = headers.get("authorization") or headers.get("Authorization")
+    with SessionLocal() as db:
+        try:
+            user = _authenticate(db, authorization)
+        except TokenRequired as exc:
+            # Surfaced to the client as a tool error, which is how MCP reports a failed
+            # call — there is no HTTP status code to return at this layer.
+            raise ValueError(str(exc)) from exc
+        return weak_patterns(db, user, limit)
+
+
+def mcp_app() -> Starlette:
+    """Build the Streamable HTTP ASGI app. Mounted at /mcp, so the path here is root.
+
+    Each call constructs a fresh session manager, and a manager's `run()` may only be
+    entered once, so this is called from the lifespan rather than at import — otherwise
+    a second app startup in one process (every extra TestClient) dies on a reused
+    manager.
+
+    DNS-rebinding protection is off because it defaults to allowing only localhost
+    Host headers, which is wrong for a mounted app served under a real domain. The
+    parent app's CORS middleware restricts browser origins, and the one tool that
+    exposes user data requires a bearer token regardless of origin.
+    """
+    return mcp.streamable_http_app(
+        streamable_http_path="/",
+        stateless_http=True,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+
+
+# --------------------------------------------------------------------- REST mirror
+
+router = APIRouter(prefix="/api/v1/mcp-tools", tags=["mcp"])
+
+
+class SearchProblemsArgs(BaseModel):
+    pattern_id: str = Field(description="A taxonomy pattern id.")
+    difficulty: Difficulty | None = None
+    limit: int = Field(default=5, ge=1, le=CAP)
+
+
+class TaxonomyArgs(BaseModel):
+    family: Family | None = None
+
+
+class WeakPatternsArgs(BaseModel):
+    limit: int = Field(default=10, ge=1, le=CAP)
+
+
+@router.get("/tools")
+async def list_tools() -> dict[str, Any]:
+    """Mirror of MCP tools/list, read straight off the registered tools."""
+    tools = await mcp.list_tools()
+    return {
+        "tools": [
+            {
+                "name": t.name,
+                "description": t.description,
+                # Named input_schema on the model, inputSchema on the wire.
+                "inputSchema": t.input_schema,
+            }
+            for t in tools
+        ]
+    }
+
+
+@router.post("/tools/search_problems_by_pattern")
+def rest_search_problems(args: SearchProblemsArgs, db: Session = Depends(get_db)) -> dict[str, Any]:
+    try:
+        return search_problems(db, args.pattern_id, args.difficulty, args.limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/tools/get_pattern_taxonomy")
+def rest_pattern_taxonomy(args: TaxonomyArgs | None = None) -> dict[str, Any]:
+    return pattern_taxonomy(args.family if args else None)
+
+
+@router.post("/tools/get_my_weak_patterns")
+def rest_weak_patterns(
+    args: WeakPatternsArgs | None = None,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        user = _authenticate(db, authorization)
+    except TokenRequired as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return weak_patterns(db, user, args.limit if args else 10)

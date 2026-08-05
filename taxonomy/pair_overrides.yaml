@@ -1,0 +1,69 @@
+# Hand corrections to the generated (pattern, problem) links.
+#
+# The seeder generates links from embedding similarity, or from tag overlap when there
+# are no embeddings. Both are approximations. This file is where a human overrules them,
+# and it is applied on every seed so a reseed never discards the decisions.
+#
+# Workflow:
+#   python -m weakspot.ingest.seed --review          # writes pair_candidates.yaml
+#   # read it, move entries into the lists below
+#   python -m weakspot.ingest.seed --apply-review
+#
+# Only pattern_id and problem_slug are read. `note` is for whoever reads this next.
+#
+# confirmed: the pair is genuinely a good drill for that pattern. Marked curated, which
+#   means later reseeds leave it alone. A confirmed pair that the generator never
+#   produced is created.
+# rejected: the pair is wrong. The link is deleted.
+
+# NOTE: this is a starter set — the strongest and the most obviously wrong candidates
+# from one review pass, not the full top 200. Run `--review` and work through the rest.
+
+confirmed:
+  - pattern_id: complexity.missing_memoization
+    problem_slug: fibonacci-number
+    note: the canonical exponential-recursion-without-a-cache problem
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: merge-sorted-array
+    note: statement requires merging into nums1 itself
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: move-zeroes
+    note: explicitly forbids making a copy
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: remove-duplicates-from-sorted-array
+    note: in-place with O(1) extra memory
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: remove-element
+    note: in-place, returns the new length
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: rotate-array
+    note: the follow-up demands an in-place O(1) solution
+  - pattern_id: comprehension.missed_in_place_requirement
+    problem_slug: sort-colors
+    note: one-pass in-place is the whole point
+  - pattern_id: implementation.backtracking_state_not_restored
+    problem_slug: combination-sum
+    note: forgetting to pop after recursing is the standard failure here
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: maximum-subarray
+    note: an all-negative array is the case a naive Kadane's gets wrong
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: shortest-subarray-with-sum-at-least-k
+    note: negatives are exactly why a sliding window fails and a deque is needed
+
+rejected:
+  - pattern_id: comprehension.missed_modulo_requirement
+    problem_slug: unique-paths
+    note: the statement has no modulo requirement; tag overlap invented this
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: plus-one
+    note: digits are non-negative by construction, so negatives cannot be misread
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: corporate-flight-bookings
+    note: a difference array, no negative-value subtlety
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: product-of-array-except-self
+    note: zeros are the edge case here, not negatives
+  - pattern_id: comprehension.missed_negative_values
+    problem_slug: range-sum-query-immutable
+    note: prefix sums handle negatives without any special care

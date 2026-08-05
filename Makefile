@@ -1,4 +1,4 @@
-.PHONY: help up down seed api web test lint eval eval-offline gate fmt
+.PHONY: help up down migrate stamp seed api web test lint eval eval-offline gate fmt
 
 DB ?= postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot
 REDIS ?= redis://localhost:6379/0
@@ -14,11 +14,17 @@ up:  ## Start postgres and redis
 down:  ## Stop everything
 	docker compose down
 
-seed:  ## Load the problem index (add EMBED=1 once VOYAGE_API_KEY is set)
+migrate:  ## Bring the database schema to head
+	cd api && $(ENVS) .venv/bin/alembic upgrade head
+
+stamp:  ## Mark an existing pre-Alembic database as already at head (one-time)
+	cd api && $(ENVS) .venv/bin/alembic stamp head
+
+seed: migrate  ## Load the problem index (add EMBED=1 once VOYAGE_API_KEY is set)
 	cd api && $(ENVS) .venv/bin/python -m weakspot.ingest.seed \
 		$(if $(EMBED),,--no-embed)
 
-api:  ## Run the API locally
+api: migrate  ## Run the API locally
 	cd api && $(ENVS) ENV=development .venv/bin/uvicorn weakspot.main:app --reload --port 8000
 
 web:  ## Run the frontend

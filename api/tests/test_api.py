@@ -9,6 +9,7 @@ accounting, cache behaviour, and ownership checks. Model quality is Suites A-D's
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -374,9 +375,12 @@ def test_weak_patterns_reports_occurrences(client, stub_graph):
     assert items[0]["trend"] in {"up", "down", "flat"}
 
 
+MCP_TOOLS = "/api/v1/mcp-tools/tools"
+
+
 def test_mcp_tools_are_described_and_bounded():
     with TestClient(app) as c:
-        tools = c.get("/mcp/tools").json()["tools"]
+        tools = c.get(MCP_TOOLS).json()["tools"]
     assert {t["name"] for t in tools} == {
         "search_problems_by_pattern",
         "get_pattern_taxonomy",
@@ -390,7 +394,7 @@ def test_mcp_tools_are_described_and_bounded():
 def test_mcp_search_caps_results():
     with TestClient(app) as c:
         body = c.post(
-            "/mcp/tools/search_problems_by_pattern",
+            f"{MCP_TOOLS}/search_problems_by_pattern",
             json={"pattern_id": "complexity.missing_memoization", "limit": 20},
         ).json()
     assert len(body["results"]) <= 20
@@ -398,10 +402,80 @@ def test_mcp_search_caps_results():
 
 def test_mcp_search_rejects_unknown_pattern():
     with TestClient(app) as c:
-        response = c.post("/mcp/tools/search_problems_by_pattern", json={"pattern_id": "made.up"})
+        response = c.post(f"{MCP_TOOLS}/search_problems_by_pattern", json={"pattern_id": "made.up"})
     assert response.status_code == 400
 
 
 def test_mcp_weak_patterns_requires_a_token():
     with TestClient(app) as c:
-        assert c.post("/mcp/tools/get_my_weak_patterns", json={}).status_code == 401
+        assert c.post(f"{MCP_TOOLS}/get_my_weak_patterns", json={}).status_code == 401
+
+
+def _mcp_rpc(client: TestClient, method: str, params: dict | None = None, rid: int = 1):
+    """One Streamable HTTP JSON-RPC call. The transport may answer as SSE or JSON."""
+    response = client.post(
+        "/mcp/",
+        json={"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.text
+    if "text/event-stream" in response.headers.get("content-type", ""):
+        for line in body.splitlines():
+            if line.startswith("data: "):
+                return json.loads(line[6:])
+        raise AssertionError(f"no data frame in SSE response: {body!r}")
+    return response.json()
+
+
+def test_mcp_endpoint_speaks_the_real_protocol():
+    """The thing an MCP client actually does: initialize, then tools/list.
+
+    The REST mirror above cannot catch a broken mount or an unstarted session manager,
+    which is exactly what stops Claude Desktop and Cursor from connecting.
+    """
+    with TestClient(app) as c:
+        init = _mcp_rpc(
+            c,
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "0"},
+            },
+        )
+        assert init["result"]["serverInfo"]["name"] == "weakspot"
+
+        listed = _mcp_rpc(c, "tools/list", rid=2)
+        names = {t["name"] for t in listed["result"]["tools"]}
+    assert names == {
+        "search_problems_by_pattern",
+        "get_pattern_taxonomy",
+        "get_my_weak_patterns",
+    }
+
+
+def test_mcp_tool_call_returns_taxonomy_over_the_protocol():
+    with TestClient(app) as c:
+        _mcp_rpc(
+            c,
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "pytest", "version": "0"},
+            },
+        )
+        called = _mcp_rpc(
+            c,
+            "tools/call",
+            {"name": "get_pattern_taxonomy", "arguments": {"family": "complexity"}},
+            rid=3,
+        )
+    result = called["result"]
+    assert not result.get("isError"), result
+    patterns = result["structuredContent"]["patterns"]
+    assert patterns and all(p["family"] == "complexity" for p in patterns)

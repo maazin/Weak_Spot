@@ -29,7 +29,9 @@ services:
 
   api:
     build:
-      context: ./api
+      # Root context so the taxonomy, which lives outside api/, is in the image.
+      context: .
+      dockerfile: api/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://weakspot:weakspot@postgres:5432/weakspot
       REDIS_URL: redis://redis:6379/0

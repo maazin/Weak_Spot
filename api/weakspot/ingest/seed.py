@@ -16,12 +16,13 @@ import json
 import logging
 from pathlib import Path
 
+import yaml
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..db import engine, init_extensions, session_scope
+from ..db import session_scope, upgrade_to_head
 from ..embeddings import embed, pattern_embedding_text, problem_embedding_text
-from ..models import Base, Pattern, PatternProblem, Problem
+from ..models import Pattern, PatternProblem, Problem
 from ..taxonomy import get_taxonomy
 
 logger = logging.getLogger(__name__)
@@ -29,10 +30,16 @@ logger = logging.getLogger(__name__)
 SEED_PATH = Path(__file__).with_name("problems_seed.jsonl")
 PROBLEM_URL = "https://leetcode.com/problems/{slug}/"
 
-# Pairs above this cosine similarity are written as generated links. The top 200 are
-# then hand-corrected (see --review), per spec.
+# Pairs above this cosine similarity are written as generated links. The strongest
+# REVIEW_TOP_N are the ones worth a human's time, per spec: `--review` exports them and
+# `--apply-review` folds the decisions back in.
 LINK_THRESHOLD = 0.35
 LINKS_PER_PATTERN = 12
+REVIEW_TOP_N = 200
+
+# Hand corrections live here, tracked in git, and are re-applied on every seed so a
+# reseed never silently discards them.
+OVERRIDES_PATH = Path(__file__).resolve().parents[3] / "taxonomy" / "pair_overrides.yaml"
 
 
 def load_seed(path: Path = SEED_PATH) -> list[dict]:
@@ -193,9 +200,111 @@ def link_by_tag_overlap(db: Session) -> int:
     return written
 
 
+def load_overrides(
+    path: Path = OVERRIDES_PATH,
+) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+    """Read the hand-review decisions as (confirmed, rejected) sets of (pattern, slug)."""
+    if not path.exists():
+        return set(), set()
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def pairs(key: str) -> set[tuple[str, str]]:
+        return {(e["pattern_id"], e["problem_slug"]) for e in (data.get(key) or [])}
+
+    return pairs("confirmed"), pairs("rejected")
+
+
+def apply_overrides(db: Session, path: Path = OVERRIDES_PATH) -> dict[str, int]:
+    """Mark confirmed pairs curated and delete rejected ones.
+
+    Curated rows survive later reseeds untouched, so a human decision is made once.
+    """
+    confirmed, rejected = load_overrides(path)
+    if not confirmed and not rejected:
+        return {"confirmed": 0, "rejected": 0}
+
+    slug_to_id = {slug: pid for pid, slug in db.query(Problem.id, Problem.slug).all()}
+    applied = {"confirmed": 0, "rejected": 0}
+
+    for pattern_id, slug in confirmed:
+        problem_id = slug_to_id.get(slug)
+        if problem_id is None:
+            logger.warning("override references unknown problem %r", slug)
+            continue
+        row = db.get(PatternProblem, (pattern_id, problem_id))
+        if row is None:
+            # A confirmed pair the generator missed is still a pair a human wants.
+            db.add(
+                PatternProblem(
+                    pattern_id=pattern_id, problem_id=problem_id, strength=1.0, curated=True
+                )
+            )
+        else:
+            row.curated = True
+            row.strength = max(row.strength, 1.0)
+        applied["confirmed"] += 1
+
+    for pattern_id, slug in rejected:
+        problem_id = slug_to_id.get(slug)
+        if problem_id is None:
+            continue
+        row = db.get(PatternProblem, (pattern_id, problem_id))
+        if row is not None:
+            db.delete(row)
+            applied["rejected"] += 1
+
+    db.flush()
+    return applied
+
+
+def export_for_review(db: Session, out: Path, top_n: int = REVIEW_TOP_N) -> int:
+    """Write the strongest generated pairs to a YAML file for hand correction.
+
+    Already-curated pairs are skipped — they have been decided. Move an entry under
+    `confirmed:` or `rejected:` in the overrides file, then run --apply-review.
+    """
+    rows = db.execute(
+        text(
+            """
+            SELECT pp.pattern_id, p.slug, p.title, p.difficulty, pp.strength
+              FROM pattern_problems pp
+              JOIN problems p ON p.id = pp.problem_id
+             WHERE pp.curated = false
+             ORDER BY pp.strength DESC, pp.pattern_id, p.slug
+             LIMIT :limit
+            """
+        ),
+        {"limit": top_n},
+    ).fetchall()
+
+    taxonomy = get_taxonomy()
+    candidates = [
+        {
+            "pattern_id": pattern_id,
+            "pattern_name": entry.name if (entry := taxonomy.get(pattern_id)) else pattern_id,
+            "problem_slug": slug,
+            "problem_title": title,
+            "difficulty": difficulty,
+            "strength": round(float(strength), 4),
+        }
+        for pattern_id, slug, title, difficulty, strength in rows
+    ]
+
+    out.write_text(
+        "# Generated pair candidates, strongest first. Review each one and move it into\n"
+        "# taxonomy/pair_overrides.yaml under `confirmed:` or `rejected:`, then run\n"
+        "#   python -m weakspot.ingest.seed --apply-review\n"
+        "# Only pattern_id and problem_slug are read; the other fields are for reading.\n"
+        + yaml.safe_dump({"candidates": candidates}, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return len(candidates)
+
+
 def run(embed_vectors: bool = True) -> dict[str, int]:
-    init_extensions()
-    Base.metadata.create_all(engine)
+    # Seeding a fresh database is the common case, so bring the schema up rather than
+    # failing on a missing table. Idempotent when already at head.
+    upgrade_to_head()
 
     stats: dict[str, int] = {}
     with session_scope() as db:
@@ -211,6 +320,10 @@ def run(embed_vectors: bool = True) -> dict[str, int]:
         else:
             stats["links"] = link_by_tag_overlap(db)
 
+        applied = apply_overrides(db)
+        stats["confirmed"] = applied["confirmed"]
+        stats["rejected"] = applied["rejected"]
+
     return stats
 
 
@@ -222,12 +335,37 @@ def main() -> None:
         action="store_true",
         help="skip embeddings and link by tag overlap (no VOYAGE_API_KEY needed)",
     )
+    parser.add_argument(
+        "--review",
+        metavar="PATH",
+        nargs="?",
+        const="pair_candidates.yaml",
+        help=f"export the top {REVIEW_TOP_N} generated pairs for hand correction and exit",
+    )
+    parser.add_argument(
+        "--apply-review",
+        action="store_true",
+        help="apply taxonomy/pair_overrides.yaml to the existing links and exit",
+    )
     args = parser.parse_args()
+
+    if args.review:
+        with session_scope() as db:
+            count = export_for_review(db, Path(args.review))
+        print(f"wrote {count} candidates to {args.review}")
+        return
+
+    if args.apply_review:
+        with session_scope() as db:
+            applied = apply_overrides(db)
+        print(f"confirmed={applied['confirmed']} rejected={applied['rejected']}")
+        return
 
     stats = run(embed_vectors=not args.no_embed)
     print(
         f"problems={stats['problems']} patterns={stats['patterns']} "
-        f"pattern_problems={stats['links']}"
+        f"pattern_problems={stats['links']} "
+        f"confirmed={stats['confirmed']} rejected={stats['rejected']}"
     )
 
 

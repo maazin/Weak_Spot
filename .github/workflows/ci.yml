@@ -43,6 +43,11 @@ jobs:
       - name: Lint
         working-directory: api
         run: ruff check . && ruff format --check .
+      # Several API tests assert against the real problem index, so the database has to
+      # be seeded. --no-embed keeps this offline: no VOYAGE_API_KEY, tag-overlap links.
+      - name: Seed
+        working-directory: api
+        run: python -m weakspot.ingest.seed --no-embed
       - name: Test
         working-directory: api
         run: pytest -q
@@ -105,6 +110,18 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Suite C scores retrieval against the real index, so it has to exist. Embeddings
+      # are computed only when a Voyage key is present; without one the vector arm is
+      # empty and the suite reports the keyword arm alone.
+      - name: Seed
+        if: steps.changed.outputs.run == 'true' && env.ANTHROPIC_API_KEY != ''
+        working-directory: api
+        run: |
+          if [ -n "$VOYAGE_API_KEY" ]; then
+            python -m weakspot.ingest.seed
+          else
+            python -m weakspot.ingest.seed --no-embed
           fi
       - name: Run eval suites
         if: steps.changed.outputs.run == 'true' && env.ANTHROPIC_API_KEY != ''

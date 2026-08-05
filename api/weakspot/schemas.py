@@ -203,4 +203,5 @@ class HealthOut(BaseModel):
     status: str
     database: bool
     redis: bool
+    schema_current: bool
     taxonomy_entries: int
