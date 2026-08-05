@@ -23,7 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -55,7 +55,7 @@ def _uuid() -> str:
 
 
 def _now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 class User(Base):
@@ -81,7 +81,13 @@ class Problem(Base):
 
     __table_args__ = (
         CheckConstraint("difficulty in ('easy','medium','hard')", name="ck_problem_difficulty"),
-        Index("ix_problems_fts", func.to_tsvector("english", title), postgresql_using="gin"),
+        # Written as raw SQL: SQLAlchemy cannot render the 'english' regconfig literal
+        # inside a DDL index expression.
+        Index(
+            "ix_problems_fts",
+            text("to_tsvector('english', title)"),
+            postgresql_using="gin",
+        ),
     )
 
 
@@ -133,14 +139,12 @@ class Submission(Base):
     )
 
     problem: Mapped[Problem] = relationship(lazy="joined")
-    diagnosis: Mapped["Diagnosis | None"] = relationship(
+    diagnosis: Mapped[Diagnosis | None] = relationship(
         back_populates="submission", uselist=False, lazy="selectin"
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "failure_type in " + str(FAILURE_TYPES), name="ck_submission_failure_type"
-        ),
+        CheckConstraint("failure_type in " + str(FAILURE_TYPES), name="ck_submission_failure_type"),
         CheckConstraint("language in " + str(LANGUAGES), name="ck_submission_language"),
         Index("ix_submissions_user_created", "user_id", "created_at"),
     )

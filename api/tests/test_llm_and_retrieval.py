@@ -36,27 +36,20 @@ def test_cost_prices_each_token_class_at_its_own_rate():
         cache_read_input_tokens=1_000_000,
     )
     expected = (
-        in_rate
-        + in_rate * CACHE_WRITE_MULTIPLIER
-        + in_rate * CACHE_READ_MULTIPLIER
-        + out_rate
+        in_rate + in_rate * CACHE_WRITE_MULTIPLIER + in_rate * CACHE_READ_MULTIPLIER + out_rate
     )
     assert compute_cost_usd("claude-haiku-4-5", usage) == pytest.approx(expected)
 
 
 def test_cache_read_is_an_order_of_magnitude_cheaper_than_uncached():
-    cached = compute_cost_usd(
-        "claude-haiku-4-5", FakeUsage(cache_read_input_tokens=1_000_000)
-    )
+    cached = compute_cost_usd("claude-haiku-4-5", FakeUsage(cache_read_input_tokens=1_000_000))
     uncached = compute_cost_usd("claude-haiku-4-5", FakeUsage(input_tokens=1_000_000))
     assert cached == pytest.approx(uncached * CACHE_READ_MULTIPLIER)
 
 
 def test_opus_is_the_expensive_tier():
     usage = FakeUsage(input_tokens=1_000_000, output_tokens=1_000_000)
-    assert compute_cost_usd("claude-opus-5", usage) > compute_cost_usd(
-        "claude-haiku-4-5", usage
-    )
+    assert compute_cost_usd("claude-opus-5", usage) > compute_cost_usd("claude-haiku-4-5", usage)
 
 
 def test_unknown_model_prices_at_zero_rather_than_crashing():
@@ -79,9 +72,9 @@ def test_taxonomy_block_exceeds_the_haiku_cache_minimum():
 def test_cached_prefix_is_byte_stable():
     """Any per-call drift here drops the cache hit rate to zero."""
     taxonomy = load_taxonomy()
-    assert diagnoser_prompt.build_system_prompt(
+    assert diagnoser_prompt.build_system_prompt(taxonomy) == diagnoser_prompt.build_system_prompt(
         taxonomy
-    ) == diagnoser_prompt.build_system_prompt(taxonomy)
+    )
 
 
 def test_taxonomy_leads_the_prompt():

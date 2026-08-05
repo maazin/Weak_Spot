@@ -140,9 +140,7 @@ def build_user_content(
     retry_reason: str | None = None,
 ) -> str:
     """The volatile turn. Never contains a problem statement — metadata only."""
-    numbered = "\n".join(
-        f"{i}: {line}" for i, line in enumerate(vaulted_code.split("\n"), start=1)
-    )
+    numbered = "\n".join(f"{i}: {line}" for i, line in enumerate(vaulted_code.split("\n"), start=1))
     signals = "\n".join(f"- {s}" for s in structural_signals) or "- (none extracted)"
 
     parts = [

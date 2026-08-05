@@ -63,9 +63,7 @@ def vault(code: str, language: str) -> tuple[str, dict[str, str]]:
 
     Returns the vaulted source and a mapping from placeholder to original text.
     """
-    line_comments, block_comments, string_delims = _LANG_RULES.get(
-        language, _LANG_RULES["python"]
-    )
+    line_comments, block_comments, string_delims = _LANG_RULES.get(language, _LANG_RULES["python"])
     # Longest-first so `"""` wins over `"` and `/*` is not read as `/`.
     string_delims = tuple(sorted(string_delims, key=len, reverse=True))
 
@@ -278,9 +276,7 @@ def validate_size(code: str) -> None:
         )
     line_count = code.count("\n") + 1
     if line_count > settings.max_code_lines:
-        raise IntakeError(
-            f"submission is {line_count} lines; the cap is {settings.max_code_lines}"
-        )
+        raise IntakeError(f"submission is {line_count} lines; the cap is {settings.max_code_lines}")
 
 
 def intake_node(state: GraphState) -> GraphState:

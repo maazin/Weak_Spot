@@ -24,7 +24,7 @@ SKIP_INTERVAL_DAYS = 1.0
 
 
 def _now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)
+    return dt.datetime.now(dt.UTC)
 
 
 def next_schedule(
@@ -57,9 +57,7 @@ def apply_review(db: Session, item: ReviewItem, result: str) -> ReviewItem:
     return item
 
 
-def enqueue(
-    db: Session, *, user_id: str, problem_id: str, pattern_id: str
-) -> ReviewItem | None:
+def enqueue(db: Session, *, user_id: str, problem_id: str, pattern_id: str) -> ReviewItem | None:
     """Add a recommended problem to the queue. Idempotent per (user, problem)."""
     existing = (
         db.query(ReviewItem)

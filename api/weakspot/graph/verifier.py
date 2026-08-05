@@ -40,9 +40,7 @@ def _mechanical_checks(state: GraphState) -> list[VerifierFailure]:
     spans = state.get("evidence_spans", [])
 
     if not spans:
-        failures.append(
-            {"check": "evidence_grounded", "detail": "no evidence spans were cited"}
-        )
+        failures.append({"check": "evidence_grounded", "detail": "no evidence spans were cited"})
 
     for span in spans:
         start, end = span["start_line"], span["end_line"]
@@ -51,8 +49,7 @@ def _mechanical_checks(state: GraphState) -> list[VerifierFailure]:
                 {
                     "check": "evidence_grounded",
                     "detail": (
-                        f"span {start}-{end} does not exist in a {line_count}-line "
-                        "submission"
+                        f"span {start}-{end} does not exist in a {line_count}-line submission"
                     ),
                 }
             )
@@ -97,8 +94,7 @@ def verifier_node(state: GraphState) -> GraphState:
         failure: VerifierFailure = {
             "check": "consistent_with_failure_type",
             "detail": (
-                f"a {family} diagnosis contradicts a reported "
-                f"{state['failure_type']} failure"
+                f"a {family} diagnosis contradicts a reported {state['failure_type']} failure"
             ),
         }
         logger.warning(

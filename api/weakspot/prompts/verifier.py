@@ -99,12 +99,11 @@ def build_user_content(
     evidence_spans: list[dict],
     vaulted_code: str,
 ) -> str:
-    numbered = "\n".join(
-        f"{i}: {line}" for i, line in enumerate(vaulted_code.split("\n"), start=1)
+    numbered = "\n".join(f"{i}: {line}" for i, line in enumerate(vaulted_code.split("\n"), start=1))
+    spans = (
+        "\n".join(f"- lines {s['start_line']}-{s['end_line']}: {s['why']}" for s in evidence_spans)
+        or "- (none)"
     )
-    spans = "\n".join(
-        f"- lines {s['start_line']}-{s['end_line']}: {s['why']}" for s in evidence_spans
-    ) or "- (none)"
 
     return "\n".join(
         [

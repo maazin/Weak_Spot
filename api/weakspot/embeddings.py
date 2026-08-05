@@ -51,9 +51,7 @@ def embed(texts: list[str], *, input_type: str = "document") -> list[list[float]
 
     for vec in out:
         if len(vec) != settings.embedding_dim:
-            raise EmbeddingError(
-                f"expected {settings.embedding_dim}-dim vectors, got {len(vec)}"
-            )
+            raise EmbeddingError(f"expected {settings.embedding_dim}-dim vectors, got {len(vec)}")
     return out
 
 

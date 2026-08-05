@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: weakspot
       POSTGRES_DB: weakspot
     ports:
-      - "5432:5432"
+      # 5433 on the host to avoid clashing with a local Postgres on the default port.
+      # Inside the compose network the API still connects to postgres:5432.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

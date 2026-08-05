@@ -21,7 +21,16 @@
       "Bash(echo \"EXIT=$?\")",
       "Bash(.venv/bin/pytest tests/ -q)",
       "Bash(git add *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(.venv/bin/pytest tests/test_fixtures.py -q)",
+      "Bash(docker compose *)",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot\" .venv/bin/python -m weakspot.ingest.seed --no-embed)",
+      "Bash(python3 -)",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot\" DEV_AUTH_BYPASS=true ENV=test .venv/bin/pytest tests/test_api.py -q)",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot\" DEV_AUTH_BYPASS=true ENV=test .venv/bin/pytest -q)",
+      "Bash(DATABASE_URL=\"postgresql+psycopg://weakspot:weakspot@localhost:5433/weakspot\" DEV_AUTH_BYPASS=true ENV=test .venv/bin/pytest tests/test_api.py::test_unparseable_python_rejected_before_any_model_call -q)",
+      "Bash(.venv/bin/ruff check *)",
+      "Bash(.venv/bin/ruff format *)"
     ]
   }
 }

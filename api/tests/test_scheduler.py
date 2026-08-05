@@ -36,9 +36,7 @@ def test_failure_resets_interval_and_decrements_ease():
 def test_ease_is_floored():
     ease = 2.5
     for _ in range(20):
-        _, ease, _ = next_schedule(
-            result="failed", interval_days=10.0, ease=ease, repetitions=1
-        )
+        _, ease, _ = next_schedule(result="failed", interval_days=10.0, ease=ease, repetitions=1)
     assert ease == pytest.approx(EASE_FLOOR)
 
 

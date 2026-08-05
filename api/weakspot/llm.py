@@ -76,9 +76,7 @@ class _Client:
         if self._client is None:
             settings = get_settings()
             if not settings.anthropic_api_key:
-                raise ModelTierError(
-                    "ANTHROPIC_API_KEY is not set; the diagnosis graph cannot run"
-                )
+                raise ModelTierError("ANTHROPIC_API_KEY is not set; the diagnosis graph cannot run")
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         return self._client
 

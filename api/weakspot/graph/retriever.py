@@ -67,12 +67,12 @@ def keyword_arm(
             SELECT id,
                    ts_rank(to_tsvector('english', title),
                            to_tsquery('english', :tsquery)) AS text_rank,
-                   cardinality(ARRAY(SELECT UNNEST(tags) INTERSECT
+                   cardinality(ARRAY(SELECT UNNEST(tags::text[]) INTERSECT
                                      SELECT UNNEST(CAST(:tags AS text[])))) AS tag_overlap
               FROM problems
              WHERE (:tsquery = '' OR to_tsvector('english', title) @@
                     to_tsquery('english', :tsquery))
-                OR tags && CAST(:tags AS text[])
+                OR tags::text[] && CAST(:tags AS text[])
              ORDER BY tag_overlap DESC, text_rank DESC
              LIMIT :limit
             """
@@ -160,9 +160,7 @@ def search(
     pattern = db.get(Pattern, pattern_id)
     practice_tags = list(pattern.practice_tags) if pattern else []
 
-    keyword_ids = keyword_arm(
-        db, query_terms=practice_tags, practice_tags=practice_tags
-    )
+    keyword_ids = keyword_arm(db, query_terms=practice_tags, practice_tags=practice_tags)
     vector_ids = vector_arm(db, pattern_id=pattern_id)
 
     arms = [keyword_ids, vector_ids]
