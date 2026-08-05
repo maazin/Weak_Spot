@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from weakspot.graph.retriever import RRF_K, reciprocal_rank_fusion
+from weakspot.graph.retriever import ARM_WEIGHTS, RRF_K, reciprocal_rank_fusion
 from weakspot.llm import (
     CACHE_READ_MULTIPLIER,
     CACHE_WRITE_MULTIPLIER,
@@ -125,9 +125,42 @@ def test_rrf_favours_rank_extremes_over_middles():
 
 
 def test_rrf_uses_the_specified_k():
-    assert RRF_K == 60
+    assert RRF_K == 10
     fused = reciprocal_rank_fusion([["x"]])
     assert fused == ["x"]
+
+
+def test_rrf_weights_let_the_stronger_arm_win_a_disagreement():
+    """The reason weighting exists: unweighted fusion lost to the keyword arm alone.
+
+    The keyword arm ranks its pick third while the vector arm ranks its own first, so
+    unweighted the vector arm wins outright. Weighting has to flip that — which is
+    precisely the case where equal votes were costing precision@3.
+
+    No item is shared between the arms, so this isolates the weighting from the
+    agreement bonus tested above.
+    """
+    keyword = ["filler", "kw_pick"]
+    vector = ["vec_pick"]
+
+    unweighted = reciprocal_rank_fusion([keyword, vector])
+    assert unweighted.index("vec_pick") < unweighted.index("kw_pick")
+
+    weighted = reciprocal_rank_fusion([keyword, vector], weights=list(ARM_WEIGHTS))
+    assert weighted.index("kw_pick") < weighted.index("vec_pick")
+
+
+def test_rrf_weights_default_to_equal():
+    """Callers that pass no weights get the textbook behaviour, unchanged."""
+    assert reciprocal_rank_fusion([["a"], ["b"]], weights=[1.0, 1.0]) == (
+        reciprocal_rank_fusion([["a"], ["b"]])
+    )
+
+
+def test_arm_weights_favour_keyword_over_vector():
+    """Pinned because the ordering, not the exact values, is the load-bearing claim."""
+    keyword_weight, vector_weight = ARM_WEIGHTS
+    assert keyword_weight > vector_weight
 
 
 def test_rrf_handles_empty_arms():

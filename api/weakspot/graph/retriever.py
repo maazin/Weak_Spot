@@ -28,9 +28,12 @@ from .state import GraphState
 
 logger = logging.getLogger(__name__)
 
-RRF_K = 60
+RRF_K = 10
 ARM_LIMIT = 50
 FINAL_LIMIT = 3
+
+# [keyword, vector] — see reciprocal_rank_fusion for why they are not equal.
+ARM_WEIGHTS = [3.0, 1.0]
 
 DIFFICULTY_RANK = {"easy": 0, "medium": 1, "hard": 2}
 
@@ -103,12 +106,35 @@ def vector_arm(db: Session, *, pattern_id: str, limit: int = ARM_LIMIT) -> list[
     return [row[0] for row in rows]
 
 
-def reciprocal_rank_fusion(ranked_lists: list[list[str]], k: int = RRF_K) -> list[str]:
-    """Standard RRF: each list contributes 1/(k + rank), ranks starting at 1."""
+def reciprocal_rank_fusion(
+    ranked_lists: list[list[str]],
+    k: int = RRF_K,
+    weights: list[float] | None = None,
+) -> list[str]:
+    """Weighted RRF: each list contributes weight/(k + rank), ranks starting at 1.
+
+    Unweighted fusion of these two arms measurably loses to the keyword arm alone on
+    precision@3 — the vector arm is the weaker of the two, and giving it an equal vote
+    pushes correct results out of the top 3. Both defaults below correct for that:
+
+    * `ARM_WEIGHTS` favours keyword because the vector arm is a strictly lossier view of
+      the same information. Problem statements are copyrighted, so embeddings only ever
+      see title and tags — which is precisely what the keyword arm indexes directly and
+      exactly. The vector arm can only blur that signal, never add to it.
+    * `RRF_K = 10` rather than the conventional 60. With k=60 the contributions of ranks
+      1 and 10 differ by under 15%, which throws away nearly all the ranking information
+      when only three results survive.
+
+    Both were confirmed by a sweep on Suite C, but that set covers 23 patterns, so the
+    margins are worth roughly one case. Treat these as reasoned defaults that the
+    evidence did not contradict, not as tuned optima.
+    """
+    if weights is None:
+        weights = [1.0] * len(ranked_lists)
     scores: dict[str, float] = {}
-    for ranking in ranked_lists:
+    for ranking, weight in zip(ranked_lists, weights, strict=True):
         for position, item_id in enumerate(ranking, start=1):
-            scores[item_id] = scores.get(item_id, 0.0) + 1.0 / (k + position)
+            scores[item_id] = scores.get(item_id, 0.0) + weight / (k + position)
     return [item for item, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)]
 
 
@@ -164,10 +190,16 @@ def search(
     vector_ids = vector_arm(db, pattern_id=pattern_id)
 
     arms = [keyword_ids, vector_ids]
+    weights = list(ARM_WEIGHTS)
     if prewarmed:
+        # The pre-warm is a coarse tag-only pass whose reason for existing is latency,
+        # not ranking — and it is a subset of what the full keyword arm already
+        # contributes. It gets a single vote so it can break ties without effectively
+        # counting the keyword signal twice.
         arms.append(prewarmed)
+        weights.append(1.0)
 
-    fused = reciprocal_rank_fusion(arms)
+    fused = reciprocal_rank_fusion(arms, weights=weights)
 
     excluded = _excluded_problem_ids(db, user_id)
     if exclude_problem_id:

@@ -15,7 +15,12 @@ from weakspot.config import get_settings
 from weakspot.db import SessionLocal
 from weakspot.graph.diagnoser import diagnoser_node
 from weakspot.graph.intake import intake_node
-from weakspot.graph.retriever import keyword_arm, reciprocal_rank_fusion, vector_arm
+from weakspot.graph.retriever import (
+    ARM_WEIGHTS,
+    keyword_arm,
+    reciprocal_rank_fusion,
+    vector_arm,
+)
 from weakspot.llm import call_structured
 from weakspot.models import Problem
 from weakspot.taxonomy import get_taxonomy
@@ -238,7 +243,7 @@ def run_suite_c() -> dict[str, Any]:
 
             keyword_ids = keyword_arm(db, query_terms=tags, practice_tags=tags)
             vector_ids = vector_arm(db, pattern_id=pattern_id)
-            fused = reciprocal_rank_fusion([keyword_ids, vector_ids])
+            fused = reciprocal_rank_fusion([keyword_ids, vector_ids], weights=list(ARM_WEIGHTS))
 
             arms["keyword_only"].append(([slug_by_id.get(i, "") for i in keyword_ids], relevant))
             arms["vector_only"].append(([slug_by_id.get(i, "") for i in vector_ids], relevant))

@@ -120,8 +120,15 @@ def link_by_similarity(db: Session) -> int:
 
     Curated rows (`curated = true`) are never overwritten — hand corrections survive
     a re-run, which is the whole point of separating the two.
+
+    Every non-curated link this pass does *not* endorse is removed. Without that the
+    table becomes the union of every linking strategy ever run against it: seeding once
+    with `--no-embed` and again with embeddings leaves the tag-overlap links behind
+    alongside the similarity ones, and the result depends on the order someone happened
+    to run commands in rather than on the current inputs.
     """
     written = 0
+    keep: set[tuple[str, str]] = set()
     patterns = db.query(Pattern).filter(Pattern.embedding.isnot(None)).all()
 
     for pattern in patterns:
@@ -141,6 +148,7 @@ def link_by_similarity(db: Session) -> int:
         for problem_id, similarity in rows:
             if similarity < LINK_THRESHOLD:
                 continue
+            keep.add((pattern.id, problem_id))
             existing = db.get(PatternProblem, (pattern.id, problem_id))
             if existing is not None:
                 if not existing.curated:
@@ -155,6 +163,18 @@ def link_by_similarity(db: Session) -> int:
                 )
             )
             written += 1
+
+    db.flush()
+
+    stale = [
+        row
+        for row in db.query(PatternProblem).filter(PatternProblem.curated.is_(False)).all()
+        if (row.pattern_id, row.problem_id) not in keep
+    ]
+    for row in stale:
+        db.delete(row)
+    if stale:
+        logger.info("removed %d stale non-curated links", len(stale))
 
     db.flush()
     return written
