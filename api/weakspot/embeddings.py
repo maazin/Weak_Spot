@@ -55,10 +55,6 @@ def embed(texts: list[str], *, input_type: str = "document") -> list[list[float]
     return out
 
 
-def embed_one(text: str, *, input_type: str = "query") -> list[float]:
-    return embed([text], input_type=input_type)[0]
-
-
 def problem_embedding_text(title: str, tags: list[str], difficulty: str) -> str:
     """Only metadata is ever embedded — never a problem statement.
 

@@ -16,15 +16,15 @@ dependencies = [
     "httpx>=0.28",
     "pyyaml>=6.0",
     "itsdangerous>=2.2",
+    # LangGraph orchestrates the graph; the LLM calls go through the Anthropic SDK
+    # directly (see README). anthropic is declared explicitly rather than inherited
+    # from a langchain package, so removing one cannot silently break the other.
     "langgraph>=0.2.50",
-    "langchain-core>=0.3.20",
-    "langchain-anthropic>=0.3.0",
+    "anthropic>=0.40",
     "voyageai>=0.3.2",
     "langfuse>=2.55",
     "prometheus-client>=0.21",
     "mcp>=1.1",
-    "tree-sitter>=0.23",
-    "tree-sitter-language-pack>=0.4",
 ]
 
 [project.optional-dependencies]

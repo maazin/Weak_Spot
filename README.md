@@ -1,6 +1,6 @@
 # Weakspot
 
-![Weakspot](assets/readme-banner.png)
+![Weakspot](web/public/assets/readme-banner.png)
 
 Weakspot diagnoses **why** a failed coding-problem attempt failed at the conceptual
 level, then schedules same-pattern problems for spaced review so the same mistake stops

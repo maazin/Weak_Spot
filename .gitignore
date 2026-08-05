@@ -12,3 +12,9 @@ dist/
 *.log
 .DS_Store
 /api/evals/results/
+
+# Claude Code local machine settings (not project config)
+.claude/settings.local.json
+
+# Output of `seed --review`; decisions belong in taxonomy/pair_overrides.yaml
+pair_candidates.yaml

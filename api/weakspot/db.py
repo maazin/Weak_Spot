@@ -50,17 +50,6 @@ def session_scope() -> Iterator[Session]:
         db.close()
 
 
-def init_extensions() -> None:
-    """pgvector lives in the same Postgres instance; no separate vector service.
-
-    The initial migration creates both extensions, so this is only needed by tooling
-    that touches the database before migrations have ever run.
-    """
-    with engine.begin() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-
-
 def _alembic_config() -> Config:
     root = Path(__file__).resolve().parent.parent
     config = Config(str(root / "alembic.ini"))

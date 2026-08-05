@@ -87,13 +87,6 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication required")
 
 
-def optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
-    try:
-        return current_user(request, db)
-    except HTTPException:
-        return None
-
-
 def github_authorize_url(state: str) -> str:
     settings = get_settings()
     return (

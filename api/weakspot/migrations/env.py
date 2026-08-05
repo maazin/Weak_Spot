@@ -23,13 +23,6 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
 
-def include_object(obj, name, type_, reflected, compare_to) -> bool:
-    """Keep pgvector's own tables out of autogenerate diffs."""
-    if type_ == "table" and name in {"vector_store", "langchain_pg_embedding"}:
-        return False
-    return True
-
-
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -37,7 +30,6 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -54,7 +46,6 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            include_object=include_object,
         )
         with context.begin_transaction():
             context.run_migrations()
