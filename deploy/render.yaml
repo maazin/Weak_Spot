@@ -1,0 +1,64 @@
+# Render blueprint. Postgres lives on Neon and Redis on Upstash, so only the two
+# services are defined here; both connection strings come in as secrets.
+#
+# Deploy: point a Render Blueprint at this file.
+
+services:
+  - type: web
+    name: weakspot-api
+    runtime: docker
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: ./api
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: ENV
+        value: production
+      - key: DEV_AUTH_BYPASS
+        value: "false"
+      - key: TAXONOMY_PATH
+        value: /taxonomy/patterns.yaml
+      - key: WEB_ORIGIN
+        fromService:
+          name: weakspot-web
+          type: web
+          property: host
+      # Set in the dashboard, not here.
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CALLBACK_URL
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+
+  - type: web
+    name: weakspot-web
+    runtime: static
+    buildCommand: cd web && npm ci && npm run build
+    staticPublishPath: ./web/dist
+    envVars:
+      - key: VITE_API_BASE
+        sync: false
+    routes:
+      # Client-side routing: every unmatched path serves the SPA shell.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
