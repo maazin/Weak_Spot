@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import anthropic
 import pytest
 
 from weakspot.graph.retriever import ARM_WEIGHTS, RRF_K, reciprocal_rank_fusion
@@ -12,6 +13,9 @@ from weakspot.llm import (
     CACHE_WRITE_MULTIPLIER,
     HAIKU_CACHE_MINIMUM_TOKENS,
     PRICING,
+    TRANSIENT_400_RETRIES,
+    _create_with_transient_retry,
+    _is_transient_bad_request,
     compute_cost_usd,
     escalate,
 )
@@ -54,6 +58,29 @@ def test_opus_is_the_expensive_tier():
 
 def test_unknown_model_prices_at_zero_rather_than_crashing():
     assert compute_cost_usd("some-future-model", FakeUsage(input_tokens=100)) == 0.0
+
+
+def test_cost_prices_the_dated_id_the_api_returns_not_just_the_alias():
+    """Regression: the first real eval run priced 119 diagnoses at $0.00.
+
+    Requests go out with an alias, but `response.model` comes back as the resolved
+    dated id, and cost was looked up with that. Every other test here passes the alias,
+    which is exactly why they stayed green while production recorded zero.
+    """
+    usage = FakeUsage(input_tokens=1_000_000)
+    alias = compute_cost_usd("claude-haiku-4-5", usage)
+    dated = compute_cost_usd("claude-haiku-4-5-20251001", usage)
+
+    assert alias > 0.0
+    assert dated == alias
+
+
+def test_cost_prefix_match_picks_the_most_specific_alias():
+    """`claude-opus-5-...` must not fall back to a shorter alias that also prefixes it."""
+    usage = FakeUsage(input_tokens=1_000_000)
+    assert compute_cost_usd("claude-opus-5-20260101", usage) == compute_cost_usd(
+        "claude-opus-5", usage
+    )
 
 
 def test_escalation_is_one_way_and_terminal():
@@ -166,3 +193,76 @@ def test_arm_weights_favour_keyword_over_vector():
 def test_rrf_handles_empty_arms():
     assert reciprocal_rank_fusion([[], []]) == []
     assert reciprocal_rank_fusion([[], ["a"]]) == ["a"]
+
+
+# ------------------------------------------------- transient 400 retry (regression)
+
+
+class _FakeBadRequest(anthropic.BadRequestError):
+    """Constructed without a real HTTP round trip; only `body` is read."""
+
+    def __init__(self, message: str):
+        self.body = {
+            "type": "error",
+            "error": {"type": "invalid_request_error", "message": message},
+        }
+
+
+def test_only_the_contentless_400_counts_as_transient():
+    """A 400 that names the offending field is a real bug and must not be retried."""
+    assert _is_transient_bad_request(_FakeBadRequest("Invalid request data"))
+    assert _is_transient_bad_request(_FakeBadRequest("invalid request data"))
+    assert not _is_transient_bad_request(
+        _FakeBadRequest("messages.0.content.0.text: field required")
+    )
+
+
+def test_transient_400_is_retried_and_succeeds():
+    """Regression: 5/124 Suite A cases and 3/40 Suite D cases died on this.
+
+    The identical payload succeeded on retry — measured at 1 failure in 10 calls — but
+    the SDK does not retry 400, so a routine hiccup surfaced as a red injection gate.
+    """
+    calls = {"n": 0}
+
+    class Client:
+        class messages:
+            @staticmethod
+            def create(**_):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise _FakeBadRequest("Invalid request data")
+                return "response"
+
+    assert _create_with_transient_retry(Client(), {"model": "m"}) == "response"
+    assert calls["n"] == 2
+
+
+def test_a_real_400_is_not_retried():
+    calls = {"n": 0}
+
+    class Client:
+        class messages:
+            @staticmethod
+            def create(**_):
+                calls["n"] += 1
+                raise _FakeBadRequest("tools.0.input_schema: invalid")
+
+    with pytest.raises(anthropic.BadRequestError):
+        _create_with_transient_retry(Client(), {"model": "m"})
+    assert calls["n"] == 1, "a malformed request must fail on the first attempt"
+
+
+def test_persistent_transient_400_eventually_gives_up():
+    calls = {"n": 0}
+
+    class Client:
+        class messages:
+            @staticmethod
+            def create(**_):
+                calls["n"] += 1
+                raise _FakeBadRequest("Invalid request data")
+
+    with pytest.raises(anthropic.BadRequestError):
+        _create_with_transient_retry(Client(), {"model": "m"})
+    assert calls["n"] == TRANSIENT_400_RETRIES

@@ -336,13 +336,19 @@ def run(embed_vectors: bool = True) -> dict[str, int]:
         if embed_vectors:
             embed_problems(db, problems)
             embed_patterns(db, patterns)
-            stats["links"] = link_by_similarity(db)
+            stats["links_written"] = link_by_similarity(db)
         else:
-            stats["links"] = link_by_tag_overlap(db)
+            stats["links_written"] = link_by_tag_overlap(db)
 
         applied = apply_overrides(db)
         stats["confirmed"] = applied["confirmed"]
         stats["rejected"] = applied["rejected"]
+
+        # The count that describes the resulting index, not just this run's inserts.
+        # Re-seeding an already-seeded database updates rather than inserts, so
+        # `links_written` drops to near zero and reads like the linking collapsed.
+        db.flush()
+        stats["links"] = db.query(PatternProblem).count()
 
     return stats
 
@@ -384,7 +390,7 @@ def main() -> None:
     stats = run(embed_vectors=not args.no_embed)
     print(
         f"problems={stats['problems']} patterns={stats['patterns']} "
-        f"pattern_problems={stats['links']} "
+        f"pattern_problems={stats['links']} (new this run: {stats['links_written']}) "
         f"confirmed={stats['confirmed']} rejected={stats['rejected']}"
     )
 

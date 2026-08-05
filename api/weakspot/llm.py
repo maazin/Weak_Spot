@@ -25,6 +25,7 @@ Tier notes that are easy to get wrong:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,6 +33,8 @@ from typing import Any
 import anthropic
 
 from .config import get_settings
+
+logger = logging.getLogger(__name__)
 
 # USD per million tokens, per tier.
 PRICING: dict[str, tuple[float, float]] = {
@@ -41,6 +44,11 @@ PRICING: dict[str, tuple[float, float]] = {
 
 CACHE_WRITE_MULTIPLIER = 1.25  # 5-minute TTL
 CACHE_READ_MULTIPLIER = 0.10
+
+# See _is_transient_bad_request. Three attempts covers a 1-in-10 failure rate with
+# room to spare, without masking a genuinely malformed request for long.
+TRANSIENT_400_RETRIES = 3
+TRANSIENT_400_BACKOFF_SECONDS = 0.5
 
 # Below this, a prefix silently will not cache on Haiku 4.5.
 HAIKU_CACHE_MINIMUM_TOKENS = 4096
@@ -84,14 +92,35 @@ class _Client:
 _shared = _Client()
 
 
+def _rates_for(model: str) -> tuple[float, float] | None:
+    """Price by alias or by resolved id.
+
+    Requests are sent with an alias (`claude-haiku-4-5`) but responses come back with
+    the dated id it resolved to (`claude-haiku-4-5-20251001`). Pricing follows the
+    alias, so match the longest alias the id starts with rather than requiring equality.
+    """
+    exact = PRICING.get(model)
+    if exact is not None:
+        return exact
+    candidates = [alias for alias in PRICING if model.startswith(alias)]
+    if not candidates:
+        return None
+    return PRICING[max(candidates, key=len)]
+
+
 def compute_cost_usd(model: str, usage: Any) -> float:
     """Price a call from its four usage counters.
 
     `input_tokens` is the uncached remainder only — the cached span is reported
     separately, so summing all four is what actually reflects the prompt.
     """
-    rates = PRICING.get(model)
+    rates = _rates_for(model)
     if rates is None:
+        # Loud on purpose. This returned 0.0 silently for every call in the first eval
+        # run: PRICING is keyed on the alias `claude-haiku-4-5`, but responses echo the
+        # resolved id `claude-haiku-4-5-20251001`, so every lookup missed and the whole
+        # cost story read as free.
+        logger.warning("no pricing for model %r; cost recorded as 0.0", model)
         return 0.0
     in_rate, out_rate = rates
 
@@ -107,6 +136,48 @@ def compute_cost_usd(model: str, usage: Any) -> float:
         + output * out_rate
     ) / 1_000_000
     return round(dollars, 8)
+
+
+def _is_transient_bad_request(exc: anthropic.BadRequestError) -> bool:
+    """True for the contentless 400 the API occasionally returns.
+
+    A real validation failure names what was wrong ("messages.0.content: field
+    required"). This one carries only the bare string below, and the identical payload
+    succeeds on the next attempt — measured at 1 failure in 10 identical calls, which
+    matches the 5/124 and 3/40 error counts in the first full eval run.
+    """
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return False
+    message = str(body.get("error", {}).get("message", "")).strip().lower()
+    return message == "invalid request data"
+
+
+def _create_with_transient_retry(client: anthropic.Anthropic, request: dict[str, Any]) -> Any:
+    """Retry the one failure class the SDK will not.
+
+    The SDK retries 408/409/429/5xx and deliberately does not retry 400, which is right
+    in general — a malformed request stays malformed. The contentless 400 above is the
+    exception, and without this a routine API hiccup surfaced as a failed diagnosis for
+    the user and as a red prompt-injection gate in CI.
+
+    A genuine 400 still fails, just after `TRANSIENT_400_RETRIES` attempts. Rejected
+    requests are not billed, so the wasted work is latency rather than money.
+    """
+    for attempt in range(TRANSIENT_400_RETRIES):
+        try:
+            return client.messages.create(**request)
+        except anthropic.BadRequestError as exc:
+            if attempt == TRANSIENT_400_RETRIES - 1 or not _is_transient_bad_request(exc):
+                raise
+            logger.warning(
+                "transient 400 from %s (attempt %d/%d); retrying",
+                request.get("model"),
+                attempt + 1,
+                TRANSIENT_400_RETRIES,
+            )
+            time.sleep(TRANSIENT_400_BACKOFF_SECONDS * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def call_structured(
@@ -162,7 +233,7 @@ def call_structured(
         request["output_config"] = {"effort": effort}
 
     started = time.perf_counter()
-    response = client.messages.create(**request)
+    response = _create_with_transient_retry(client, request)
     latency_ms = int((time.perf_counter() - started) * 1000)
 
     tool_input: dict[str, Any] = {}
