@@ -1,0 +1,1001 @@
+# Weakspot pattern taxonomy — the closed set of failure modes the diagnoser may emit.
+#
+# All `correct_approach` text is original prose written for this project. No editorial
+# or problem-statement text from any judge site appears here, and none may be added.
+#
+# `signals` are concrete, checkable properties of submitted code. They are fed to the
+# diagnoser as the grounding for its choice, and to the verifier as the thing an
+# evidence span has to actually demonstrate. A signal that cannot be checked against
+# code the user wrote does not belong in this file.
+#
+# Families:
+#   pattern_selection — wrong algorithmic shape chosen
+#   implementation    — right shape, wrong details
+#   complexity        — correct and too slow
+#   comprehension     — misread the problem
+
+# ---------------------------------------------------------------------------
+# pattern_selection
+# ---------------------------------------------------------------------------
+
+- id: pattern_selection.hashmap_over_two_pointers
+  family: pattern_selection
+  name: Reached for a hash map where two pointers was the intended shape
+  signals:
+    - dict or set allocated proportional to input size
+    - input is stated as sorted in the problem constraints
+    - single pass that stores every element seen so far
+  correct_approach: >
+    When the input is already sorted, the sortedness is the gift the problem is
+    handing you. Two indices walking inward from the ends let you decide, at every
+    step, which side to move based on whether the current pair is too small or too
+    large. That decision is only sound because the array is ordered. A hash map
+    throws that ordering away and buys back the same answer at the cost of linear
+    extra memory. Reach for the map when the input is unsorted and you cannot
+    afford to sort it; reach for two pointers the moment sortedness is guaranteed.
+  related_patterns:
+    - pattern_selection.sorting_unlocks_linear
+    - comprehension.missed_sorted_input_guarantee
+  practice_tags: [two-pointers, array, sorting]
+
+- id: pattern_selection.sorting_unlocks_linear
+  family: pattern_selection
+  name: Missed that sorting first collapses the problem to a linear pass
+  signals:
+    - nested loop comparing every pair of elements
+    - no call to sort or sorted anywhere in the submission
+    - problem involves intervals, closest pairs, or grouping by proximity
+  correct_approach: >
+    Some problems look quadratic only because the input arrives in arbitrary order.
+    Sorting costs n log n once and then makes the useful neighbours adjacent, so a
+    single sweep finishes the job. Interval merging, finding the smallest gap, and
+    grouping near-equal values all have this shape. The test for whether sorting
+    helps is simple: ask whether the answer depends on the original positions. If
+    it does not, you are free to reorder, and reordering is usually what turns the
+    nested loop into a sweep.
+  related_patterns:
+    - pattern_selection.hashmap_over_two_pointers
+    - complexity.sort_inside_loop
+  practice_tags: [sorting, array, greedy, intervals]
+
+- id: pattern_selection.greedy_over_dp
+  family: pattern_selection
+  name: Took a locally optimal choice where the problem required dynamic programming
+  signals:
+    - single pass choosing the best immediate option with no state carried forward
+    - no memo table, cache, or recursion over subproblems
+    - the choice at each step constrains options later in the input
+  correct_approach: >
+    A greedy algorithm is correct only when a locally best choice is provably part
+    of some globally best solution. When an early pick forecloses later options in a
+    way you cannot reason about locally, greed breaks, and you need to keep every
+    partial answer alive until the end. That is what a DP table does: it stores the
+    best result for each subproblem so a later step can consult it rather than
+    guess. Before writing a greedy loop, try to state the exchange argument for why
+    the local choice is safe. If you cannot state it in one sentence, you probably
+    need DP.
+  related_patterns:
+    - complexity.missing_memoization
+    - complexity.exponential_recursion_branching
+  practice_tags: [dynamic-programming, greedy, array]
+
+- id: pattern_selection.dfs_over_bfs_shortest_path
+  family: pattern_selection
+  name: Used depth-first search where shortest path demanded breadth-first
+  signals:
+    - recursive traversal or explicit stack used on a graph or grid
+    - the problem asks for a minimum number of steps, moves, or levels
+    - edges are unweighted
+  correct_approach: >
+    On an unweighted graph, breadth-first search reaches every node by a path of the
+    fewest possible edges, because it finishes an entire distance layer before
+    starting the next. Depth-first search offers no such guarantee: the first time it
+    touches a node may be down a long detour, and fixing that by exploring all paths
+    turns a linear traversal into an exponential one. Whenever the wording is
+    "minimum steps", "shortest", or "fewest moves" and the edges carry no weight,
+    the queue is the right container, not the stack.
+  related_patterns:
+    - implementation.bfs_visited_marked_on_dequeue
+    - pattern_selection.missed_graph_modeling
+  practice_tags: [bfs, graph, shortest-path, matrix]
+
+- id: pattern_selection.nested_loops_over_sliding_window
+  family: pattern_selection
+  name: Recomputed every subarray instead of sliding a window
+  signals:
+    - outer loop over start index with an inner loop over end index
+    - inner loop recomputes a sum, count, or frequency map from scratch
+    - the quantity being tracked can be updated incrementally
+  correct_approach: >
+    When you move a window's right edge by one, the contents change by exactly one
+    element added, and when the left edge advances, exactly one is removed. Any
+    aggregate that supports both an add and a remove — a running sum, a frequency
+    counter, a distinct-element count — can therefore be maintained in constant time
+    per step rather than rebuilt. The nested-loop version recomputes from scratch
+    what the previous iteration already knew. Ask what changes between adjacent
+    windows; usually it is one element on each side, and that is the whole trick.
+  related_patterns:
+    - complexity.recompute_inside_loop
+    - implementation.two_pointer_advance_condition_wrong
+  practice_tags: [sliding-window, two-pointers, string, array]
+
+- id: pattern_selection.linear_scan_over_binary_search
+  family: pattern_selection
+  name: Scanned linearly through data that supported binary search
+  signals:
+    - sequential loop searching a sorted array or a monotonic condition
+    - input size bound in the constraints is large enough to make a linear scan per query too slow
+    - no midpoint computation anywhere in the submission
+  correct_approach: >
+    Sortedness lets you discard half the remaining candidates with a single
+    comparison. The requirement is not literally a sorted array but a monotonic
+    predicate: some property that is false for a prefix of the search space and true
+    for the rest. Once you can phrase the question as "what is the first position
+    where this becomes true", the midpoint test is available and the search costs
+    log n. A linear scan is only the right answer when no such monotonic framing
+    exists, or when the data is small enough that the difference does not matter.
+  related_patterns:
+    - implementation.binary_search_bounds_off_by_one
+    - pattern_selection.exhaustive_search_over_binary_search_on_answer
+  practice_tags: [binary-search, array, sorting]
+
+- id: pattern_selection.exhaustive_search_over_binary_search_on_answer
+  family: pattern_selection
+  name: Enumerated every candidate answer instead of binary searching the answer space
+  signals:
+    - loop iterating over every possible answer value from a low bound to a high bound
+    - a feasibility check inside the loop that is monotonic in the loop variable
+    - the answer range is far larger than the input size
+  correct_approach: >
+    Some problems hide a binary search in the answer rather than in the input. If
+    you can write a check that answers "is a result of at least x achievable?" and
+    that check flips from true to false exactly once as x grows, you can binary
+    search over x itself. Minimum capacity, minimum time, and maximum-of-minimum
+    problems almost always have this shape. Enumerating candidates one at a time
+    does the same feasibility work but repeats it far more often than necessary. The
+    hard part is proving monotonicity; the search itself is then routine.
+  related_patterns:
+    - pattern_selection.linear_scan_over_binary_search
+    - comprehension.missed_constraint_bound
+  practice_tags: [binary-search, greedy, array]
+
+- id: pattern_selection.sorting_over_heap_for_top_k
+  family: pattern_selection
+  name: Sorted the whole input to pick out only the top k
+  signals:
+    - full sort of the input followed by taking only a small slice of the result
+    - k is much smaller than n, or the input arrives as a stream
+    - no heap, priority queue, or partial-selection call
+  correct_approach: >
+    Sorting produces a total ordering, but a top-k question only needs the boundary
+    between the k best and everything else. A heap of size k gives you exactly that:
+    each element is compared against the current worst survivor and either discarded
+    or swapped in, costing log k per element rather than log n. The saving matters
+    most when k is small relative to n, and it becomes essential when the input is a
+    stream you cannot hold in memory at once. Sorting is not wrong here so much as
+    it is answering a larger question than the one asked.
+  related_patterns:
+    - implementation.heap_wrong_polarity
+    - complexity.sort_inside_loop
+  practice_tags: [heap, sorting, top-k]
+
+- id: pattern_selection.visited_set_over_union_find
+  family: pattern_selection
+  name: Re-traversed for connectivity where a disjoint-set structure was called for
+  signals:
+    - repeated traversal from scratch to test whether two nodes are connected
+    - edges are processed incrementally or arrive over time
+    - no parent array, find, or union helper
+  correct_approach: >
+    Connectivity questions asked repeatedly, or asked while edges are still being
+    added, are what disjoint-set union is for. It keeps each component's membership
+    in a shallow forest, so both "which component is this in" and "merge these two
+    components" run in effectively constant time. Running a fresh traversal per query
+    redoes the entire component discovery every time. The signal to watch for is a
+    traversal inside a loop over edges or queries: that is the shape union-find
+    exists to collapse.
+  related_patterns:
+    - pattern_selection.missed_graph_modeling
+    - complexity.recompute_inside_loop
+  practice_tags: [union-find, graph, connectivity]
+
+- id: pattern_selection.brute_force_over_monotonic_stack
+  family: pattern_selection
+  name: Searched backwards element by element for the next greater or smaller value
+  signals:
+    - inner loop walking backwards or forwards from the current index looking for a comparison
+    - the problem asks for a nearest greater, nearest smaller, or span-style quantity
+    - no stack maintained across the outer loop
+  correct_approach: >
+    Next-greater-element questions have a shared structure: once an element has a
+    larger neighbour to its right, it can never be the answer for anything further
+    right, so it can be discarded permanently. A stack that you keep in increasing or
+    decreasing order captures exactly that reasoning — you pop everything the new
+    element dominates, and each element is pushed and popped at most once, giving a
+    linear total. Histogram areas, daily temperatures, and stock spans are all this
+    pattern wearing different clothes.
+  related_patterns:
+    - complexity.recompute_inside_loop
+    - pattern_selection.nested_loops_over_sliding_window
+  practice_tags: [monotonic-stack, stack, array]
+
+- id: pattern_selection.recompute_over_prefix_sum
+  family: pattern_selection
+  name: Recomputed range aggregates that a prefix structure answers in constant time
+  signals:
+    - loop summing or counting over a subrange inside another loop or per query
+    - many range queries over data that does not change between them
+    - no cumulative array built before the query loop
+  correct_approach: >
+    If the underlying data is static, spend one linear pass building cumulative
+    totals and every range query afterwards becomes a single subtraction. The same
+    idea extends to counts, XORs, and two-dimensional regions. The trade is one array
+    of extra memory against turning every query from linear to constant. When the
+    data does change between queries, this is the point at which a Fenwick or segment
+    tree earns its complexity — but reach for those only once a plain prefix array is
+    genuinely ruled out.
+  related_patterns:
+    - complexity.redundant_full_recomputation_per_query
+    - pattern_selection.nested_loops_over_sliding_window
+  practice_tags: [prefix-sum, array, matrix]
+
+- id: pattern_selection.missed_graph_modeling
+  family: pattern_selection
+  name: Did not recognise the input as a graph
+  signals:
+    - ad-hoc simulation with manual bookkeeping of transitions between states
+    - the problem describes dependencies, conversions, or reachable states
+    - no adjacency structure, queue, or traversal present
+  correct_approach: >
+    A surprising number of problems are graph problems in disguise. Word ladders,
+    currency conversions, task prerequisites, and grid movement all reduce to nodes
+    and edges once you name what a node is and what makes two nodes adjacent. Doing
+    that naming explicitly is the whole step; afterwards you get to use the standard
+    traversal toolkit instead of inventing bespoke bookkeeping. If your solution has
+    a growing pile of state-tracking variables and manual transition logic, stop and
+    ask what the nodes are.
+  related_patterns:
+    - pattern_selection.dfs_over_bfs_shortest_path
+    - pattern_selection.missed_topological_sort
+  practice_tags: [graph, bfs, dfs, modeling]
+
+- id: pattern_selection.missed_topological_sort
+  family: pattern_selection
+  name: Handled ordering constraints without a topological sort
+  signals:
+    - repeated passes over a constraint list until nothing changes
+    - the problem describes prerequisites, dependencies, or a valid build order
+    - no in-degree count or dependency queue
+  correct_approach: >
+    When the input is a set of "A must come before B" constraints, the question is
+    whether the directed graph has a cycle and, if not, what a valid linear order
+    looks like. Counting how many unmet prerequisites each node has and repeatedly
+    releasing the nodes that have none produces such an order in linear time, and
+    the count of released nodes tells you immediately whether a cycle exists. Looping
+    over the constraint list until it stabilises computes the same thing far more
+    slowly and gives you no clean cycle test.
+  related_patterns:
+    - pattern_selection.missed_graph_modeling
+    - complexity.recompute_inside_loop
+  practice_tags: [topological-sort, graph, bfs]
+
+# ---------------------------------------------------------------------------
+# implementation
+# ---------------------------------------------------------------------------
+
+- id: implementation.binary_search_bounds_off_by_one
+  family: implementation
+  name: Binary search bounds or midpoint update off by one
+  signals:
+    - loop condition mixes an inclusive high bound with an exclusive update or the reverse
+    - high assigned mid where mid has already been ruled out, or low assigned mid without adding one
+    - answer returned is adjacent to the correct one
+  correct_approach: >
+    Pick one convention and hold it for the whole function. If high is an inclusive
+    index, the loop runs while low is less than or equal to high, and a rejected
+    midpoint moves the bound past it. If high is exclusive, the loop runs while low
+    is strictly less than high, and high is assigned the midpoint itself. Mixing the
+    two is what produces answers that are correct except by one, and it is also what
+    produces loops that never terminate. Before running anything, trace a two-element
+    and a one-element array by hand; almost every bounds bug shows up there.
+  related_patterns:
+    - implementation.binary_search_infinite_loop
+    - pattern_selection.linear_scan_over_binary_search
+  practice_tags: [binary-search, array]
+
+- id: implementation.binary_search_infinite_loop
+  family: implementation
+  name: Binary search never narrows because the midpoint rounds toward a stuck bound
+  signals:
+    - low assigned mid rather than mid plus one inside the loop
+    - midpoint computed with floor division while the low bound is the one advancing
+    - submission timed out on a small input
+  correct_approach: >
+    Floor division makes the midpoint equal the low bound whenever the window has
+    shrunk to two elements. If your update then assigns low the midpoint, the window
+    stops shrinking and the loop spins forever. Two fixes exist and you should choose
+    deliberately: either advance low past the midpoint, or bias the midpoint upward
+    when it is low that moves. The tell for this bug is a timeout on an input far too
+    small to be genuinely slow — that is a hang, not a performance problem.
+  related_patterns:
+    - implementation.binary_search_bounds_off_by_one
+  practice_tags: [binary-search, array]
+
+- id: implementation.bfs_visited_marked_on_dequeue
+  family: implementation
+  name: Marked nodes visited when dequeued rather than when enqueued
+  signals:
+    - visited set updated after popping from the queue instead of before pushing
+    - the same node can be pushed by several neighbours before it is processed
+    - memory blowup or duplicated work on dense graphs
+  correct_approach: >
+    In breadth-first search a node can be discovered by several neighbours in the
+    same layer. If you only mark it once it comes off the queue, every one of those
+    neighbours pushes its own copy first, and the queue grows with duplicates — which
+    costs memory, repeats work, and can corrupt a level-by-level distance count. Mark
+    the node the instant you push it. The invariant to hold is that membership in the
+    visited set means "already scheduled", not "already processed".
+  related_patterns:
+    - pattern_selection.dfs_over_bfs_shortest_path
+    - complexity.exponential_recursion_branching
+  practice_tags: [bfs, graph, matrix]
+
+- id: implementation.recursion_base_case_wrong
+  family: implementation
+  name: Recursion base case missing, misplaced, or returning the wrong identity
+  signals:
+    - recursive function whose base case returns a value that breaks the combining step
+    - bounds check performed after the recursive descent rather than before
+    - stack overflow or wrong result only on the smallest inputs
+  correct_approach: >
+    A base case has to do two things: stop the descent, and return the value that
+    makes the combining step come out right for the smallest input. Those are
+    separate requirements and it is easy to satisfy only the first. Returning zero
+    where the combiner multiplies, or an empty list where the caller expects a list
+    containing one empty option, both terminate correctly and still give wrong
+    answers. Check the guard runs before you index anything, then verify the returned
+    identity by hand against an input of size zero and size one.
+  related_patterns:
+    - implementation.dp_base_case_or_dimensions_wrong
+    - comprehension.missed_empty_or_single_element_case
+  practice_tags: [recursion, dynamic-programming, tree]
+
+- id: implementation.duplicates_not_deduped
+  family: implementation
+  name: Duplicate elements produced duplicate results
+  signals:
+    - result list appended to without any uniqueness check
+    - input is explicitly allowed to contain repeated values
+    - output contains the same tuple or combination more than once
+  correct_approach: >
+    When the input may repeat values, two different index paths can build the same
+    answer, and nothing in the traversal notices. Sorting first so equal values sit
+    together, then skipping an element when it equals its predecessor at the same
+    recursion depth, removes the duplicates at the source. That is preferable to
+    collecting everything and deduplicating at the end, which does the wasted work
+    first and then pays again to detect it. The distinction to keep clear is between
+    reusing the same index and reusing an equal value.
+  related_patterns:
+    - implementation.backtracking_state_not_restored
+    - comprehension.missed_duplicate_elements_allowed
+  practice_tags: [backtracking, sorting, array]
+
+- id: implementation.backtracking_state_not_restored
+  family: implementation
+  name: Backtracking mutated shared state without undoing it
+  signals:
+    - element appended to a working list before the recursive call with no matching removal after
+    - the same mutable list or set object threaded through every recursion level
+    - results all identical, all empty, or contaminated across branches
+  correct_approach: >
+    Backtracking works by mutating one shared path and rewinding it, so every change
+    made before a recursive call needs an exact inverse after it. Miss the undo and
+    later branches inherit state from earlier ones. There is a second, quieter form
+    of this bug: appending the working list itself into the results stores a
+    reference, so every stored answer changes as the path continues. Append a copy.
+    The rule is that the working state belongs to the current path only, and the
+    results must not alias it.
+  related_patterns:
+    - implementation.duplicates_not_deduped
+    - implementation.mutable_reference_stored_instead_of_copy
+  practice_tags: [backtracking, recursion, array]
+
+- id: implementation.mutable_reference_stored_instead_of_copy
+  family: implementation
+  name: Stored a reference to a mutable object that later changed underneath
+  signals:
+    - the same list or dict object appended into a results collection more than once
+    - no slice, copy, or constructor call at the point of storage
+    - all stored results end up equal to the final state
+  correct_approach: >
+    Appending a list stores a pointer, not a snapshot. Every later mutation of that
+    list is visible through every reference already stored, so a results array ends
+    up holding many views of one object. Take an explicit copy at the moment of
+    storage. The same trap appears when a mutable default argument is shared across
+    calls, and when a grid is built by repeating a single row object rather than
+    constructing an independent row each time.
+  related_patterns:
+    - implementation.backtracking_state_not_restored
+    - implementation.in_place_mutation_while_iterating
+  practice_tags: [array, recursion, backtracking]
+
+- id: implementation.dp_iteration_order_wrong
+  family: implementation
+  name: Dynamic programming loops ran in an order that reused the wrong version of a state
+  signals:
+    - one-dimensional dp array updated in ascending order where each item may be used once
+    - inner and outer loops swapped relative to what the recurrence requires
+    - counts inflated or combinations counted in several orders
+  correct_approach: >
+    Flattening a two-dimensional DP to one dimension is safe only if the traversal
+    order guarantees you read the previous row rather than the row you are currently
+    writing. For the bounded case where each item is used at most once, that means
+    sweeping the capacity dimension downward; sweeping upward silently permits reuse.
+    The loop nesting matters for a second reason: iterating items outermost counts
+    combinations, iterating targets outermost counts permutations. Decide which the
+    problem wants before you write the loops.
+  related_patterns:
+    - implementation.dp_base_case_or_dimensions_wrong
+    - pattern_selection.greedy_over_dp
+  practice_tags: [dynamic-programming, knapsack, array]
+
+- id: implementation.dp_base_case_or_dimensions_wrong
+  family: implementation
+  name: DP table sized or seeded incorrectly
+  signals:
+    - table allocated with length n where the recurrence needs n plus one
+    - initial row or column left at a default that the recurrence then propagates
+    - index error at a boundary, or an answer wrong by exactly the base value
+  correct_approach: >
+    A DP table needs one slot for the empty prefix, which is why the natural size is
+    usually n plus one rather than n. That extra slot is also where the seed value
+    lives, and the seed has to be the answer for an empty input, not a placeholder
+    zero chosen for convenience. For minimisation problems the unreachable states
+    need a value large enough never to win, and you have to make sure adding to it
+    cannot overflow or accidentally become the minimum. Write down the meaning of one
+    cell in words before allocating anything.
+  related_patterns:
+    - implementation.dp_iteration_order_wrong
+    - implementation.recursion_base_case_wrong
+  practice_tags: [dynamic-programming, array, string]
+
+- id: implementation.two_pointer_advance_condition_wrong
+  family: implementation
+  name: Two-pointer advance rule moved the wrong side or failed to make progress
+  signals:
+    - both pointers moved inside the same branch, or neither moved on some path
+    - the shrink condition on a window does not mirror the grow condition
+    - result is off, or the loop hangs on a specific input shape
+  correct_approach: >
+    Every iteration must move at least one pointer, and which one moves has to follow
+    from the comparison you just made. On a sorted pair search, a sum that is too
+    small means the only way to improve is to raise the low end; too large means
+    lower the high end. On a variable window, the grow and shrink conditions must be
+    exact complements, or the window will either never shrink or shrink past the
+    valid region. Trace the case where both values are equal — that is where the
+    missing branch usually hides.
+  related_patterns:
+    - pattern_selection.nested_loops_over_sliding_window
+    - pattern_selection.hashmap_over_two_pointers
+  practice_tags: [two-pointers, sliding-window, array]
+
+- id: implementation.heap_wrong_polarity
+  family: implementation
+  name: Used a min-heap where a max-heap was needed, or forgot the negation
+  signals:
+    - values pushed to a min-heap unnegated while the problem asks for largest
+    - heap trimmed by popping the wrong end
+    - answer is consistently the opposite extreme of the correct one
+  correct_approach: >
+    A standard library heap is usually a min-heap, so getting max behaviour means
+    negating on the way in and again on the way out, or supplying an inverted
+    comparator. There is a second polarity decision people get backwards: to keep the
+    k largest elements you maintain a min-heap of size k and evict its smallest, not
+    a max-heap. State in a comment which extreme is at the root and which end you
+    evict; that one line prevents most of these.
+  related_patterns:
+    - pattern_selection.sorting_over_heap_for_top_k
+    - implementation.custom_comparator_wrong
+  practice_tags: [heap, sorting, top-k]
+
+- id: implementation.custom_comparator_wrong
+  family: implementation
+  name: Sort key or comparator did not encode the intended ordering
+  signals:
+    - sort key on a single field where the ordering needs a tiebreak
+    - comparison written as subtraction on values that can overflow, or on non-numeric fields
+    - ties resolved arbitrarily and the output order matters
+  correct_approach: >
+    A sort key must be a total description of the ordering you want, including how
+    ties break. Sorting on one field and hoping the secondary order survives relies
+    on stability that may not hold across the transformations you apply afterwards.
+    Where the ordering is genuinely relational rather than by key — arranging strings
+    so their concatenation is largest, for instance — the comparison has to be
+    written between two candidates directly, and it must be consistent: if it says a
+    beats b and b beats c, it has to say a beats c.
+  related_patterns:
+    - implementation.heap_wrong_polarity
+    - comprehension.missed_tiebreak_rule
+  practice_tags: [sorting, greedy, string]
+
+- id: implementation.linked_list_pointer_loss
+  family: implementation
+  name: Lost a linked-list pointer during a rewire
+  signals:
+    - next pointer reassigned before the old successor was saved
+    - no dummy head node where the head itself may be removed
+    - traversal drops nodes, truncates the list, or forms a cycle
+  correct_approach: >
+    Reversing or splicing a list is a fixed choreography: save the successor, rewire
+    the current node, then advance. Doing the rewire first strands the rest of the
+    list. The second recurring problem is the head itself — whenever the first node
+    might be removed or replaced, a dummy node in front removes the special case
+    entirely and lets one code path handle every position. Draw three nodes and the
+    pointers at each step before writing the loop.
+  related_patterns:
+    - implementation.recursion_base_case_wrong
+  practice_tags: [linked-list, two-pointers]
+
+- id: implementation.in_place_mutation_while_iterating
+  family: implementation
+  name: Modified a collection while iterating over it
+  signals:
+    - element removed from or inserted into the same list or dict being iterated
+    - index shifting after a deletion inside an index-based loop
+    - elements silently skipped in the output
+  correct_approach: >
+    Removing an element shifts every later element down, and an index-based loop then
+    steps straight over its replacement, so roughly half the intended removals are
+    missed. Iterating a dictionary while adding or deleting keys raises or produces
+    undefined behaviour depending on the language. Build a new collection and assign
+    it back, iterate over a copy, or walk backwards so removals only affect indices
+    you have already passed. Whichever you pick, make the choice explicit rather than
+    incidental.
+  related_patterns:
+    - implementation.mutable_reference_stored_instead_of_copy
+  practice_tags: [array, hash-map, iteration]
+
+- id: implementation.integer_overflow_or_precision_loss
+  family: implementation
+  name: Arithmetic overflowed a fixed-width type or lost floating-point precision
+  signals:
+    - midpoint computed as the sum of two bounds in a fixed-width integer language
+    - product or accumulation of large values without a wider type or a modulus
+    - equality compared between floating point values
+  correct_approach: >
+    In languages with fixed-width integers, adding two large bounds to find a
+    midpoint can wrap negative; subtracting and halving the difference cannot. The
+    same care applies to running products, which need a wider type or the modulus the
+    problem specifies applied at every step rather than once at the end. Separately,
+    floating point should never be compared for equality — compare against a
+    tolerance, or restructure to stay in integers, which is usually possible.
+  related_patterns:
+    - implementation.binary_search_bounds_off_by_one
+    - comprehension.missed_modulo_requirement
+  practice_tags: [math, binary-search, overflow]
+
+- id: implementation.grid_bounds_or_direction_error
+  family: implementation
+  name: Grid traversal indexed out of bounds or mixed up row and column
+  signals:
+    - neighbour offsets applied without a bounds check before indexing
+    - row index used against the column dimension or vice versa
+    - runtime index error, or correct behaviour only on square grids
+  correct_approach: >
+    Check that a candidate cell is inside the grid before you read it, not after, and
+    keep the row and column dimensions in separately named variables so a square-grid
+    test cannot hide a transposition. Direction offsets are worth writing once as an
+    explicit list and reusing, rather than unrolling four nearly identical branches
+    where one typo survives review. If the code only works on square inputs, that is
+    a transposition, not an edge case.
+  related_patterns:
+    - implementation.bfs_visited_marked_on_dequeue
+    - comprehension.missed_empty_or_single_element_case
+  practice_tags: [matrix, bfs, dfs, grid]
+
+# ---------------------------------------------------------------------------
+# complexity
+# ---------------------------------------------------------------------------
+
+- id: complexity.missing_memoization
+  family: complexity
+  name: Recursive solution recomputed overlapping subproblems
+  signals:
+    - recursive function called with the same arguments on multiple branches
+    - no cache, memo dict, or decorator on the recursive function
+    - timeout on inputs where the recursion tree branches more than once
+  correct_approach: >
+    A recursion whose branches revisit the same arguments is doing exponential work
+    to answer a polynomial number of distinct questions. Caching results by argument
+    tuple collapses the tree to the number of distinct states, which is what makes
+    the difference between a solution that hangs and one that returns instantly. The
+    diagnostic question is whether two different branches can ever be called with the
+    same arguments. If yes, the subproblems overlap and the cache is not an
+    optimisation but a requirement.
+  related_patterns:
+    - pattern_selection.greedy_over_dp
+    - complexity.exponential_recursion_branching
+  practice_tags: [dynamic-programming, recursion, memoization]
+
+- id: complexity.recompute_inside_loop
+  family: complexity
+  name: Recomputed a loop-invariant value on every iteration
+  signals:
+    - an aggregate, length, or lookup structure rebuilt inside the loop body
+    - the recomputed value does not depend on the loop variable
+    - one extra factor of n over the intended complexity
+  correct_approach: >
+    Anything whose value does not change across iterations belongs above the loop.
+    The costly version of this is rebuilding a structure — a set, a frequency map, a
+    sorted copy — inside the body when it could be built once and updated
+    incrementally, or not at all. This is the single most common way an intended
+    linear solution becomes quadratic. Read each line of the loop body and ask
+    whether it depends on the loop variable; if it does not, hoist it.
+  related_patterns:
+    - complexity.sort_inside_loop
+    - pattern_selection.nested_loops_over_sliding_window
+  practice_tags: [optimization, array, loops]
+
+- id: complexity.string_concat_in_loop
+  family: complexity
+  name: Built a string by repeated concatenation
+  signals:
+    - string variable reassigned by appending inside a loop
+    - the loop runs proportional to the output length
+    - accepted on small inputs, timed out on large ones
+  correct_approach: >
+    In languages where strings are immutable, each concatenation allocates a fresh
+    string and copies everything accumulated so far, so building a string of length n
+    one piece at a time costs quadratic time and allocation churn. Collect the pieces
+    in a list and join them once at the end, or use the language's dedicated builder
+    type. The behaviour is identical and the cost becomes linear. The tell is a
+    solution that passes every small test and dies only on the largest.
+  related_patterns:
+    - complexity.repeated_slicing
+    - complexity.recompute_inside_loop
+  practice_tags: [string, optimization]
+
+- id: complexity.list_membership_scan
+  family: complexity
+  name: Tested membership against a list instead of a hash set
+  signals:
+    - membership test against a list or array inside a loop
+    - the container being searched grows with the input
+    - quadratic behaviour with no nested loop visible in the source
+  correct_approach: >
+    A membership test on a list walks it element by element, so putting one inside a
+    loop is a nested loop that does not look like one — which is exactly why it
+    survives review. Converting the container to a hash set makes each test constant
+    time and usually requires changing one line. The same applies to searching for an
+    index inside a loop. Whenever you see a containment check in a hot path, check
+    what type it is checking against.
+  related_patterns:
+    - complexity.recompute_inside_loop
+    - pattern_selection.hashmap_over_two_pointers
+  practice_tags: [hash-set, optimization, array]
+
+- id: complexity.sort_inside_loop
+  family: complexity
+  name: Sorted inside a loop that could have sorted once
+  signals:
+    - sort call inside a loop body or inside a recursive function
+    - the collection being sorted changes little or not at all between iterations
+    - an n log n factor multiplied by another n
+  correct_approach: >
+    Sorting inside a loop pays n log n on every pass. Usually the collection is the
+    same each time and the sort belongs outside; where it genuinely changes by one
+    element per iteration, a heap or an ordered structure maintains the order
+    incrementally at log cost instead of resorting from scratch. Ask what actually
+    changed since the last sort — if the answer is "one element", you want a heap,
+    and if the answer is "nothing", you want to hoist it.
+  related_patterns:
+    - complexity.recompute_inside_loop
+    - pattern_selection.sorting_over_heap_for_top_k
+  practice_tags: [sorting, heap, optimization]
+
+- id: complexity.front_insertion_or_removal_on_array
+  family: complexity
+  name: Inserted or removed at the front of an array-backed list
+  signals:
+    - removal from index zero or insertion at the front inside a loop
+    - the structure is used as a queue but is an array-backed list
+    - linear-looking code that runs quadratically
+  correct_approach: >
+    Array-backed lists store elements contiguously, so touching the front shifts
+    every remaining element and costs linear time per operation. Inside a loop that
+    is quadratic. A double-ended queue supports constant-time work at both ends and
+    is the correct structure whenever you are using something as a queue. If you only
+    need a stack, keep the array and operate on the end, which is already constant.
+  related_patterns:
+    - complexity.recompute_inside_loop
+    - implementation.bfs_visited_marked_on_dequeue
+  practice_tags: [queue, deque, optimization]
+
+- id: complexity.repeated_slicing
+  family: complexity
+  name: Passed slices or copies down a recursion instead of indices
+  signals:
+    - substring or subarray slice created at each recursive call
+    - the slice is proportional in size to the current input
+    - complexity is one factor higher than the recursion structure suggests
+  correct_approach: >
+    Slicing copies. When a recursion slices its input at every level, the copying
+    dominates and adds a linear factor on top of whatever the recursion itself costs.
+    Passing start and end indices into the original data gives the same logical
+    subproblem at no allocation cost. This matters most in divide-and-conquer and in
+    string recursion, where the copies are both large and frequent.
+  related_patterns:
+    - complexity.string_concat_in_loop
+    - complexity.copying_state_per_recursive_call
+  practice_tags: [recursion, string, optimization]
+
+- id: complexity.copying_state_per_recursive_call
+  family: complexity
+  name: Copied the full working state into every recursive call
+  signals:
+    - a set, list, or map copied at each recursion level rather than mutated and undone
+    - allocation proportional to state size at every node of the recursion tree
+    - memory limit exceeded, or a large constant-factor slowdown
+  correct_approach: >
+    Copying the working state at each level is easy to reason about and expensive to
+    run: the allocation is paid at every node of the recursion tree. Mutating a single
+    shared structure and undoing the change on the way out gives identical semantics
+    for a constant cost per level. The trade is real — the mutate-and-undo version has
+    to be exactly right about the undo — but on inputs large enough to hit a memory
+    limit it is the only version that finishes.
+  related_patterns:
+    - implementation.backtracking_state_not_restored
+    - complexity.repeated_slicing
+  practice_tags: [backtracking, recursion, memory]
+
+- id: complexity.exponential_recursion_branching
+  family: complexity
+  name: Explored an exponential search space with no pruning or state collapse
+  signals:
+    - recursion branching on every element with no early termination
+    - no bound check that abandons a branch which cannot beat the current best
+    - runtime acceptable at small n and hopeless slightly above it
+  correct_approach: >
+    When a search branches at every element, the tree is exponential and the only
+    ways out are to collapse states that are equivalent, or to prune branches that
+    provably cannot win. Collapsing is memoisation and turns the problem into DP;
+    pruning keeps the search but abandons partial answers already worse than the best
+    complete one found so far. Decide which applies: if different paths reach the
+    same state, memoise; if they do not, prune.
+  related_patterns:
+    - complexity.missing_memoization
+    - pattern_selection.greedy_over_dp
+  practice_tags: [backtracking, dynamic-programming, pruning]
+
+- id: complexity.redundant_full_recomputation_per_query
+  family: complexity
+  name: Answered each query by recomputing over the whole input
+  signals:
+    - a query loop where each iteration scans the entire data set
+    - many queries against data that is static or changes rarely
+    - total cost is the product of query count and input size
+  correct_approach: >
+    With many queries against static data, preprocessing once is almost always the
+    intended solution: cumulative arrays for range aggregates, a hash index for
+    lookups, sorted order plus binary search for rank questions. When the data does
+    change between queries, a Fenwick or segment tree keeps updates and queries both
+    logarithmic. The number to compare is the cost of preprocessing once against the
+    cost of scanning per query multiplied by the query count.
+  related_patterns:
+    - pattern_selection.recompute_over_prefix_sum
+    - complexity.recompute_inside_loop
+  practice_tags: [prefix-sum, segment-tree, optimization]
+
+# ---------------------------------------------------------------------------
+# comprehension
+# ---------------------------------------------------------------------------
+
+- id: comprehension.missed_sorted_input_guarantee
+  family: comprehension
+  name: Did not use the guarantee that the input was already sorted
+  signals:
+    - explicit sort call on input the constraints already describe as sorted
+    - hash-based lookup where ordering would have given a direct method
+    - solution correct but structured as though order were arbitrary
+  correct_approach: >
+    A stated guarantee in the constraints is part of the problem, not background
+    detail. Sortedness in particular is almost never mentioned idly: it is the hinge
+    that makes two pointers, binary search, or a single merge pass available. Re-
+    sorting wastes time you were given for free, and ignoring the ordering entirely
+    usually means solving a harder problem than the one set. Read the constraints
+    block before writing code and note which guarantees you intend to exploit.
+  related_patterns:
+    - pattern_selection.hashmap_over_two_pointers
+    - pattern_selection.linear_scan_over_binary_search
+  practice_tags: [sorting, two-pointers, binary-search]
+
+- id: comprehension.missed_constraint_bound
+  family: comprehension
+  name: Ignored the input size bound and chose a complexity that could not fit
+  signals:
+    - nested loops against a stated bound large enough to rule them out
+    - exponential approach where the bound implies a polynomial one
+    - timeout on the largest tests only
+  correct_approach: >
+    The upper bound on the input size is a direct instruction about the complexity
+    you are allowed. Bounds in the low tens of thousands and above rule out quadratic
+    passes; bounds in the low twenties are an invitation to exponential enumeration
+    over subsets; a bound of a few hundred usually permits a cubic DP. Reading the
+    bound first and deciding the target complexity before writing anything saves you
+    from producing a correct solution that cannot pass.
+  related_patterns:
+    - complexity.exponential_recursion_branching
+    - pattern_selection.exhaustive_search_over_binary_search_on_answer
+  practice_tags: [complexity-analysis, constraints]
+
+- id: comprehension.missed_negative_values
+  family: comprehension
+  name: Assumed values were non-negative when the constraints allowed negatives
+  signals:
+    - accumulator seeded at zero where all values may be negative
+    - early termination on a sum exceeding a target, which negatives can later reduce
+    - correct on positive inputs, wrong when a negative appears
+  correct_approach: >
+    Negative values break two habits at once. Seeding a running maximum at zero
+    silently returns zero for an all-negative input, when the answer should be the
+    largest single element; seed from the first element instead. And any pruning that
+    assumes a growing sum can only grow is invalid once a later negative can pull it
+    back down, which is why sliding-window reasoning fails on arrays with negatives
+    and prefix-sum plus hash-map reasoning is needed. Check the sign bounds before
+    choosing the technique.
+  related_patterns:
+    - pattern_selection.recompute_over_prefix_sum
+    - comprehension.missed_empty_or_single_element_case
+  practice_tags: [array, prefix-sum, edge-cases]
+
+- id: comprehension.missed_return_format
+  family: comprehension
+  name: Returned the right computation in the wrong shape
+  signals:
+    - returns values where the problem asked for indices, or the reverse
+    - zero-based output where the problem specified one-based, or vice versa
+    - result correct in content, rejected on structure or ordering
+  correct_approach: >
+    Getting the algorithm right and the return shape wrong is one of the most
+    frustrating ways to fail, and it is pure attention rather than difficulty. Check
+    four things explicitly: indices or values, zero-based or one-based, whether an
+    in-place modification plus a length is expected instead of a new collection, and
+    whether the output has a required order. Copy the exact return description into a
+    comment above the signature before you start.
+  related_patterns:
+    - comprehension.missed_in_place_requirement
+    - comprehension.missed_tiebreak_rule
+  practice_tags: [edge-cases, io-format]
+
+- id: comprehension.missed_in_place_requirement
+  family: comprehension
+  name: Allocated a new structure where the problem required in-place modification
+  signals:
+    - new list or array built and returned where the signature modifies an argument
+    - extra space proportional to input size despite a constant-space requirement
+    - correct output, rejected for space or for not mutating the input
+  correct_approach: >
+    An in-place requirement is a constraint on space, and it usually points at a
+    specific technique: overwriting with a write-pointer while a read-pointer moves
+    ahead, swapping between positions, or encoding a second piece of information into
+    the existing values. Building a fresh structure and copying it back does not
+    satisfy it. Note whether the function is expected to return the collection or to
+    mutate the argument and return a count — those are different contracts.
+  related_patterns:
+    - comprehension.missed_return_format
+    - implementation.in_place_mutation_while_iterating
+  practice_tags: [two-pointers, array, in-place]
+
+- id: comprehension.missed_duplicate_elements_allowed
+  family: comprehension
+  name: Assumed distinct elements when the constraints permitted repeats
+  signals:
+    - logic that treats a value as a unique key when values may repeat
+    - no handling for equal adjacent elements after sorting
+    - correct on distinct inputs, wrong as soon as a value appears twice
+  correct_approach: >
+    Duplicates change what a value can be used for. A value can no longer serve as a
+    unique identity, so keying a map by value loses information that keying by index
+    preserves. In a sorted scan, equal neighbours need an explicit decision: skip
+    them, group them, or treat each occurrence separately. And in binary search over
+    a range containing repeats, "find it" becomes "find the first" or "find the
+    last", which are different searches.
+  related_patterns:
+    - implementation.duplicates_not_deduped
+    - implementation.binary_search_bounds_off_by_one
+  practice_tags: [array, sorting, edge-cases]
+
+- id: comprehension.missed_tiebreak_rule
+  family: comprehension
+  name: Ignored a stated rule for breaking ties or choosing among valid answers
+  signals:
+    - a valid answer returned where the problem specified which of several to prefer
+    - sort or selection with no secondary criterion despite one being stated
+    - output differs from expected only when two candidates score equally
+  correct_approach: >
+    When several answers satisfy the main condition, the problem usually says which
+    one it wants: the lexicographically smallest, the earliest starting, the shortest.
+    That rule is part of the specification, not a formatting preference, and it has
+    to be encoded in the comparison rather than applied afterwards. If ties are meant
+    to be broken by a second field, that field belongs in the sort key. If any valid
+    answer is genuinely accepted, the problem will say so explicitly.
+  related_patterns:
+    - implementation.custom_comparator_wrong
+    - comprehension.missed_return_format
+  practice_tags: [sorting, greedy, edge-cases]
+
+- id: comprehension.missed_empty_or_single_element_case
+  family: comprehension
+  name: Did not handle an empty or single-element input
+  signals:
+    - indexing element zero with no prior length check
+    - loop starting at index one that never runs, leaving the result unset
+    - runtime error or wrong answer only on the smallest inputs
+  correct_approach: >
+    The smallest inputs are where index assumptions surface. Reading the first
+    element before checking the length fails on empty input; a loop that begins at
+    index one never executes for a single element, so whatever it was meant to
+    initialise stays at its default. Decide what the answer is for an empty input and
+    for a one-element input, write those down, and make sure the code produces them.
+    Most of the time it is one guard clause at the top.
+  related_patterns:
+    - implementation.recursion_base_case_wrong
+    - implementation.grid_bounds_or_direction_error
+  practice_tags: [edge-cases, array]
+
+- id: comprehension.misread_subsequence_vs_subarray
+  family: comprehension
+  name: Solved for a contiguous subarray when the problem asked for a subsequence, or the reverse
+  signals:
+    - sliding window or contiguous scan where elements may be skipped
+    - DP over arbitrary earlier indices where the problem requires adjacency
+    - answers systematically too small or too large
+  correct_approach: >
+    A subarray is contiguous and a subsequence is not, and the distinction decides
+    the entire technique. Contiguity permits a window or a running scan, because the
+    candidate set only changes at its edges. A subsequence permits skipping, which
+    means a state has to consider every earlier index and the natural tool is DP.
+    Getting this backwards produces a clean, confident solution to a different
+    problem. Underline the word in the statement before choosing an approach.
+  related_patterns:
+    - pattern_selection.nested_loops_over_sliding_window
+    - pattern_selection.greedy_over_dp
+  practice_tags: [dynamic-programming, sliding-window, array]
+
+- id: comprehension.missed_modulo_requirement
+  family: comprehension
+  name: Did not apply the required modulus, or applied it too late
+  signals:
+    - large counting result returned without any modulus
+    - modulus applied only to the final answer after intermediate values grew unbounded
+    - answer correct on small inputs, wrong or overflowed on large ones
+  correct_approach: >
+    When a problem specifies that the answer be returned modulo some value, it is
+    telling you the true answer is large enough to overflow. That means the modulus
+    belongs at every addition and multiplication along the way, not only at the
+    return. Applying it once at the end is too late in fixed-width languages, where
+    the intermediate value has already wrapped. Subtraction needs care too: add the
+    modulus before reducing so the result cannot go negative.
+  related_patterns:
+    - implementation.integer_overflow_or_precision_loss
+    - comprehension.missed_constraint_bound
+  practice_tags: [math, dynamic-programming, modular-arithmetic]
+
+- id: comprehension.missed_cyclic_or_wraparound
+  family: comprehension
+  name: Treated a circular structure as linear
+  signals:
+    - traversal that stops at the last index where the problem wraps to the first
+    - no modular index arithmetic despite a circular array, list, or schedule
+    - correct except for answers that would span the boundary
+  correct_approach: >
+    Circular inputs need the wrap handled deliberately, and there are three standard
+    ways: index with modular arithmetic, concatenate the sequence with itself and
+    take windows of the original length, or split into the case that wraps and the
+    case that does not and solve them separately. Whichever you choose, the case to
+    test is the one whose answer crosses the boundary, since a linear solution gets
+    every other case right and hides the bug.
+  related_patterns:
+    - comprehension.missed_empty_or_single_element_case
+    - implementation.grid_bounds_or_direction_error
+  practice_tags: [array, circular, edge-cases]

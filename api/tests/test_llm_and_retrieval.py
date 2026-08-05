@@ -1,0 +1,142 @@
+"""Cost accounting, cache-prefix invariants, and RRF."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import pytest
+
+from weakspot.graph.retriever import RRF_K, reciprocal_rank_fusion
+from weakspot.llm import (
+    CACHE_READ_MULTIPLIER,
+    CACHE_WRITE_MULTIPLIER,
+    HAIKU_CACHE_MINIMUM_TOKENS,
+    PRICING,
+    compute_cost_usd,
+    escalate,
+)
+from weakspot.prompts import diagnoser as diagnoser_prompt
+from weakspot.taxonomy import load_taxonomy
+
+
+@dataclass
+class FakeUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+def test_cost_prices_each_token_class_at_its_own_rate():
+    in_rate, out_rate = PRICING["claude-haiku-4-5"]
+    usage = FakeUsage(
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_creation_input_tokens=1_000_000,
+        cache_read_input_tokens=1_000_000,
+    )
+    expected = (
+        in_rate
+        + in_rate * CACHE_WRITE_MULTIPLIER
+        + in_rate * CACHE_READ_MULTIPLIER
+        + out_rate
+    )
+    assert compute_cost_usd("claude-haiku-4-5", usage) == pytest.approx(expected)
+
+
+def test_cache_read_is_an_order_of_magnitude_cheaper_than_uncached():
+    cached = compute_cost_usd(
+        "claude-haiku-4-5", FakeUsage(cache_read_input_tokens=1_000_000)
+    )
+    uncached = compute_cost_usd("claude-haiku-4-5", FakeUsage(input_tokens=1_000_000))
+    assert cached == pytest.approx(uncached * CACHE_READ_MULTIPLIER)
+
+
+def test_opus_is_the_expensive_tier():
+    usage = FakeUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+    assert compute_cost_usd("claude-opus-5", usage) > compute_cost_usd(
+        "claude-haiku-4-5", usage
+    )
+
+
+def test_unknown_model_prices_at_zero_rather_than_crashing():
+    assert compute_cost_usd("some-future-model", FakeUsage(input_tokens=100)) == 0.0
+
+
+def test_escalation_is_one_way_and_terminal():
+    assert escalate("claude-haiku-4-5") == "claude-opus-5"
+    assert escalate("claude-opus-5") == "claude-opus-5"
+
+
+def test_taxonomy_block_exceeds_the_haiku_cache_minimum():
+    """Below 4096 tokens the prefix silently stops caching on Haiku 4.5."""
+    taxonomy = load_taxonomy()
+    system = diagnoser_prompt.build_system_prompt(taxonomy)
+    approx_tokens = len(system) / 4
+    assert approx_tokens > HAIKU_CACHE_MINIMUM_TOKENS
+
+
+def test_cached_prefix_is_byte_stable():
+    """Any per-call drift here drops the cache hit rate to zero."""
+    taxonomy = load_taxonomy()
+    assert diagnoser_prompt.build_system_prompt(
+        taxonomy
+    ) == diagnoser_prompt.build_system_prompt(taxonomy)
+
+
+def test_taxonomy_leads_the_prompt():
+    taxonomy = load_taxonomy()
+    system = diagnoser_prompt.build_system_prompt(taxonomy)
+    assert system.index("PATTERN TAXONOMY") < system.index("# Your task")
+
+
+def test_tool_schema_closes_the_enum_to_the_taxonomy():
+    taxonomy = load_taxonomy()
+    schema = diagnoser_prompt.build_tool_schema(taxonomy)
+    assert schema["properties"]["pattern_id"]["enum"] == taxonomy.allowed_ids()
+    assert schema["additionalProperties"] is False
+
+
+def test_user_turn_carries_no_problem_statement():
+    """Legal constraint: metadata and the user's own code only."""
+    content = diagnoser_prompt.build_user_content(
+        problem_slug="two-sum",
+        problem_title="Two Sum",
+        difficulty="easy",
+        tags=["array", "hash-table"],
+        language="python",
+        failure_type="wrong_answer",
+        structural_signals=["dict allocated"],
+        vaulted_code="x = 1",
+    )
+    assert "Two Sum" in content and "two-sum" in content
+    assert "1:" in content  # line numbering for evidence spans
+
+
+def test_rrf_rewards_agreement_between_arms():
+    """An item both arms like beats one only a single arm returned."""
+    keyword = ["a", "b"]
+    vector = ["b"]
+    fused = reciprocal_rank_fusion([keyword, vector])
+    assert fused[0] == "b"
+
+
+def test_rrf_favours_rank_extremes_over_middles():
+    """1/(k+rank) is convex, so a first-and-last item outscores a consistent middle.
+
+    Pinned deliberately: it is the counterintuitive property of RRF, and Suite C's
+    baseline comparison is only interpretable if this behaviour is understood.
+    """
+    fused = reciprocal_rank_fusion([["a", "b", "c"], ["c", "b", "a"]])
+    assert fused.index("b") == 2
+
+
+def test_rrf_uses_the_specified_k():
+    assert RRF_K == 60
+    fused = reciprocal_rank_fusion([["x"]])
+    assert fused == ["x"]
+
+
+def test_rrf_handles_empty_arms():
+    assert reciprocal_rank_fusion([[], []]) == []
+    assert reciprocal_rank_fusion([[], ["a"]]) == ["a"]

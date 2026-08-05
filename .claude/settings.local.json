@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(docker --version)",
+      "Bash(psql --version)",
+      "Bash(git --version)",
+      "Bash(env)",
+      "Bash(echo \"--- exit $? ---\")",
+      "Read(//Users/maazinshaikh/**)",
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(git symbolic-ref *)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(TAXONOMY_PATH=../taxonomy/patterns.yaml .venv/bin/pytest tests/test_taxonomy.py -q)",
+      "Bash(.venv/bin/pytest tests/test_taxonomy.py -q)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(.venv/bin/pytest tests/ -q)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)"
+    ]
+  }
+}
