@@ -7,6 +7,7 @@ the original, and the UI links out to it.
 Run:
     python -m weakspot.ingest.seed              # load + embed + link
     python -m weakspot.ingest.seed --no-embed   # metadata only, no API key needed
+    python -m weakspot.ingest.seed --reembed    # recompute existing vectors
 """
 
 from __future__ import annotations
@@ -91,8 +92,16 @@ def upsert_patterns(db: Session) -> list[Pattern]:
     return out
 
 
-def embed_problems(db: Session, problems: list[Problem]) -> None:
-    pending = [p for p in problems if p.embedding is None]
+def embed_problems(db: Session, problems: list[Problem], *, refresh: bool = False) -> None:
+    """Embed problems. `refresh` recomputes vectors that already exist.
+
+    Without `refresh` this only fills nulls, which means a change to
+    `problem_embedding_text` never reaches an already-seeded database — the improvement
+    is real in the code and absent in the index, and Suite C keeps scoring the old
+    vectors. That is not a hypothetical: it is exactly what happened when the pattern
+    text changed to tags-only.
+    """
+    pending = problems if refresh else [p for p in problems if p.embedding is None]
     if not pending:
         return
     texts = [problem_embedding_text(p.title, list(p.tags), p.difficulty) for p in pending]
@@ -102,8 +111,9 @@ def embed_problems(db: Session, problems: list[Problem]) -> None:
     db.flush()
 
 
-def embed_patterns(db: Session, patterns: list[Pattern]) -> None:
-    pending = [p for p in patterns if p.embedding is None]
+def embed_patterns(db: Session, patterns: list[Pattern], *, refresh: bool = False) -> None:
+    """Embed patterns. See `embed_problems` for why `refresh` has to exist."""
+    pending = patterns if refresh else [p for p in patterns if p.embedding is None]
     if not pending:
         return
     texts = [
@@ -321,7 +331,7 @@ def export_for_review(db: Session, out: Path, top_n: int = REVIEW_TOP_N) -> int:
     return len(candidates)
 
 
-def run(embed_vectors: bool = True) -> dict[str, int]:
+def run(embed_vectors: bool = True, *, reembed: bool = False) -> dict[str, int]:
     # Seeding a fresh database is the common case, so bring the schema up rather than
     # failing on a missing table. Idempotent when already at head.
     upgrade_to_head()
@@ -334,8 +344,8 @@ def run(embed_vectors: bool = True) -> dict[str, int]:
         stats["patterns"] = len(patterns)
 
         if embed_vectors:
-            embed_problems(db, problems)
-            embed_patterns(db, patterns)
+            embed_problems(db, problems, refresh=reembed)
+            embed_patterns(db, patterns, refresh=reembed)
             stats["links_written"] = link_by_similarity(db)
         else:
             stats["links_written"] = link_by_tag_overlap(db)
@@ -369,6 +379,11 @@ def main() -> None:
         help=f"export the top {REVIEW_TOP_N} generated pairs for hand correction and exit",
     )
     parser.add_argument(
+        "--reembed",
+        action="store_true",
+        help="recompute embeddings that already exist (needed after the embedding text changes)",
+    )
+    parser.add_argument(
         "--apply-review",
         action="store_true",
         help="apply taxonomy/pair_overrides.yaml to the existing links and exit",
@@ -387,7 +402,7 @@ def main() -> None:
         print(f"confirmed={applied['confirmed']} rejected={applied['rejected']}")
         return
 
-    stats = run(embed_vectors=not args.no_embed)
+    stats = run(embed_vectors=not args.no_embed, reembed=args.reembed)
     print(
         f"problems={stats['problems']} patterns={stats['patterns']} "
         f"pattern_problems={stats['links']} (new this run: {stats['links_written']}) "

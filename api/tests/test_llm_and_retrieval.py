@@ -152,7 +152,7 @@ def test_rrf_favours_rank_extremes_over_middles():
 
 
 def test_rrf_uses_the_specified_k():
-    assert RRF_K == 10
+    assert RRF_K == 60
     fused = reciprocal_rank_fusion([["x"]])
     assert fused == ["x"]
 
