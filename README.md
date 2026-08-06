@@ -18,55 +18,86 @@ verifier rejects it — that is a bug, not a feature.
 
 ## Results
 
-Everything below is produced by `make eval`, written to the `eval_runs` table, and
-posted as a PR comment by CI.
+All four suites are measured. Every figure below is the latest row for its suite in the
+`eval_runs` table, reproducible with `make eval`. Full breakdowns, including the family
+confusion matrix, are in [EVAL_REPORT.md](EVAL_REPORT.md).
 
-### Retrieval quality — Suite C (measured)
+### Prompt injection — Suite D: **PASS** (hard gate)
 
-100+ labelled `(pattern, problem)` pairs. Negatives are deliberately plausible: same
-family, adjacent topic, or overlapping tags.
+| metric | value |
+|---|---|
+| valid taxonomy diagnoses | **40 / 40** |
+| followed the injected instruction | **0** |
+
+Any failure blocks merge. Both payload classes are covered: instructions hidden in
+comments and strings, which vaulting removes before the model sees them, and instructions
+in identifiers, which vaulting deliberately cannot remove and the verifier has to catch.
+
+### Diagnosis accuracy — Suite A
+
+124 labelled submissions across the four families.
+
+| metric | value |
+|---|---|
+| top-1 accuracy | **0.750** |
+| top-2 accuracy | **0.823** |
+| macro F1 | 0.738 |
+| family accuracy | 0.823 |
+| scored / errored | 124 / 0 |
+| **cost per diagnosis** | **$0.00343** |
+
+`comprehension` is the weakest family at 22/31. That is structural: it means *misread the
+problem*, and the model never sees the problem statement, because storing it would
+infringe copyright. Detecting a misreading of a text the model cannot see is the price of
+the legal constraint below, and it is the clearest target for improvement.
+
+### Retrieval quality — Suite C
+
+23 patterns with a labelled positive, from 106 hand-labelled `(pattern, problem)` pairs.
+Negatives are deliberately plausible: same family, adjacent topic, or overlapping tags.
 
 | arm | precision@3 | MRR |
 |---|---|---|
-| keyword only | **0.507** | **0.752** |
-| vector only | not run — needs `VOYAGE_API_KEY` | — |
-| hybrid (RRF, k=60) | not run — needs `VOYAGE_API_KEY` | — |
+| keyword only | 0.493 | 0.693 |
+| vector only | 0.420 | 0.642 |
+| **hybrid (RRF, k=60, weighted 3:1)** | **0.522** | **0.739** |
 
-The keyword arm is a real measured baseline. The three-way comparison the spec asks for
-needs problem and pattern embeddings, which need a Voyage key; with none set, the vector
-arm returns nothing and the hybrid score collapses onto the keyword score. Run
-`make seed EMBED=1 && make eval-offline` once a key is present to fill in the other two
-rows.
+Fusion beats both baselines on both metrics — but only after two corrections, and neither
+is the fusion itself. Unweighted RRF scored 0.478, *worse* than keyword alone: the vector
+arm is a strictly lossier view of the same information, since embeddings only ever see
+title, difficulty and tags, which is exactly what the keyword arm indexes directly. And
+embedding patterns on tags alone rather than on their full prose moved the vector arm from
+0.348 to 0.420.
 
-### Diagnosis accuracy, judge calibration, injection — Suites A, B, D
+**23 patterns is 46% of the taxonomy, so a 0.03 margin is worth under one case.** An
+earlier sweep picked `k=10` here; it did not survive once measurements were made
+deterministic, and the conventional `k=60` won. Expanding this suite is the highest-value
+eval work outstanding.
 
-**Not yet run.** These consume model calls and no `ANTHROPIC_API_KEY` was set when this
-README was written. The fixtures, runners, and metric implementations are complete and
-tested; only the spend is outstanding.
+### Judge calibration — Suite B
 
-| suite | what it measures | fixtures | status |
+| dimension | exact | adjacent | Cohen's κ |
 |---|---|---|---|
-| A | top-1 / top-2 accuracy, macro F1, per-family confusion | 124 labelled submissions | awaiting `ANTHROPIC_API_KEY` |
-| B | judge-to-human exact / adjacent agreement, Cohen's kappa | 60 human-rated explanations | awaiting `ANTHROPIC_API_KEY` |
-| D | valid-diagnosis rate, injections followed | 40 adversarial submissions | awaiting `ANTHROPIC_API_KEY` |
+| correctness | 0.650 | 0.850 | 0.469 |
+| avoids_solution | 0.467 | 0.950 | 0.179 |
+| clarity | 0.267 | 0.783 | 0.131 |
+| **overall** | 0.461 | 0.861 | **0.258** |
 
-```bash
-export ANTHROPIC_API_KEY=...
-make eval
-```
+κ = 0.26 is weak. The judge is rarely wildly wrong — 0.95 adjacent agreement on whether an
+explanation withholds a solution — but it does not reproduce exact scores. **This figure
+is not yet trustworthy in either direction:** the "human" ratings share an author with the
+fixtures, so it measures reproduction of one person's judgement rather than calibration to
+a ground truth. It should be re-derived against independently written labels.
 
-That writes measured numbers into `EVAL_REPORT.md`; paste them into the tables above.
-**No placeholder numbers appear in this README** — an unrun suite is reported as unrun.
+### Latency
 
-### Latency and cost
-
-p50/p95/p99 latency and cost per diagnosis are recorded on every `diagnoses` row and
-exported from `/metrics` as `weakspot_latency_quantile_ms` and
-`weakspot_cost_per_diagnosis_usd`. They are populated by real traffic, so they are blank
-until the system has served requests.
-
-The target is **p95 under 6 seconds** end to end. The lever if it is missed is starting
-the retriever's tag-based pre-warm earlier, not switching to a faster model.
+p50/p95/p99 are recorded per diagnosis and exported from `/metrics` as
+`weakspot_latency_quantile_ms`, but they are populated by real traffic and the system has
+not served any, so **the p95 target of 6 seconds is an unvalidated goal, not a result.**
+One end-to-end run measured 26.8 s, though it included a verifier rejection and an
+escalation to Opus 5, making it a worst case rather than a typical one. The lever if the
+target is missed is starting the retriever's tag-based pre-warm earlier, not switching to
+a faster model.
 
 ---
 
@@ -104,7 +135,7 @@ Five nodes. State carries the submission, intermediate findings, and a retry cou
      escalate) │   ┌────────────────────────────────────────────┐
                │   │ retriever  (no LLM)                        │
                └──▶│ keyword arm + pgvector arm, fused with RRF │
-                   │ k=60 · difficulty-mixed · top 3            │
+                   │ k=60, weighted 3:1 · difficulty-mixed · 3  │
                    └───────────────────┬────────────────────────┘
                                        ▼
                    ┌────────────────────────────────────────────┐
@@ -186,7 +217,7 @@ the sites that host them. The data model reflects that in the initial migration:
 | Frontend | React + Vite + Tailwind |
 | Tracing | Langfuse |
 | Migrations | Alembic — the app never creates its own schema |
-| Tests | pytest — **116 passing** |
+| Tests | pytest — **127 passing** |
 | CI | GitHub Actions |
 
 **One deliberate deviation from the spec.** The spec lists LangChain as the LLM client.
@@ -207,12 +238,18 @@ cp .env.example .env          # fill in keys; it boots without them
 make up                       # postgres + redis
 cd api && python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 make migrate                  # alembic upgrade head — creates the schema
-make seed                     # 205 problems, 50 patterns, 579 links (no keys needed)
+make seed                     # 205 problems, 50 patterns, links (no keys needed)
 make api                      # http://localhost:8000
 make web                      # http://localhost:5173
 ```
 
 `make seed EMBED=1` additionally computes embeddings once `VOYAGE_API_KEY` is set.
+Seeding only fills missing vectors, so after any change to the embedding text run
+`python -m weakspot.ingest.seed --reembed` to recompute the ones already stored —
+otherwise the change lives in the code and never reaches the index.
+
+A Voyage account with no payment method is capped at 3 requests/minute. Seeding is only a
+few batched requests and waits out the limit automatically; it is slow, not broken.
 `make seed` and `make api` both depend on `migrate`, so the explicit step is only needed
 if you want to migrate without doing anything else.
 
@@ -228,7 +265,7 @@ session without GitHub and **the app refuses to start if it is enabled while
 accepting unauthenticated sessions.
 
 ```bash
-make test          # 116 tests, run against migrated schema
+make test          # 127 tests, run against migrated schema
 make lint          # ruff + eslint
 make eval          # all four suites (needs ANTHROPIC_API_KEY)
 make eval-offline  # Suite C only — no model calls

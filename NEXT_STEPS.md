@@ -1,115 +1,91 @@
-# Next steps — things only you can do
+# Next steps
 
-Everything in this file is blocked on your accounts, your keys, or your judgement.
-The code is done and verified; these are the gaps between "built" and "finished".
+The build is complete and all four eval suites are measured — see
+[EVAL_REPORT.md](EVAL_REPORT.md). What follows is what is left, ordered by value.
 
-Ordered by value. Items 1 and 2 are what a reader of the repo will notice first.
-
----
-
-## 1. Run the eval suites — the README's biggest hole
-
-**Why it matters:** the Results section currently says "not yet run" for three of the
-four suites. That is honest, but a reader looking for evidence the system works finds
-IOUs. One command turns them into real numbers.
-
-**What you need:** an Anthropic API key. A Voyage key too, if you want the retrieval
-comparison completed.
-
-```bash
-cd /Users/maazinshaikh/Claude_Working_Folder/Make_Here/Weak_Spot
-cp .env.example .env      # if you have not already
-# put ANTHROPIC_API_KEY=... and VOYAGE_API_KEY=... in .env
-make up
-make seed EMBED=1         # only needed if you added a Voyage key
-make eval
-```
-
-That writes `EVAL_REPORT.md` and inserts a row per suite into the `eval_runs` table.
-
-**Then edit README.md:** replace the three "awaiting `ANTHROPIC_API_KEY`" rows in the
-Suites A/B/D table with the measured numbers, and fill the two blank rows in the
-retrieval table. The keyword-only row (p@3 **0.507**, MRR **0.752**) is already real and
-should not change.
-
-**Cost:** roughly 224 diagnoses plus 60 judge calls on Haiku 4.5, most of them hitting
-the cached taxonomy prefix. Small, but not zero — check `cost_usd` in the report.
-
-**If Suite D fails, stop and read it.** It is the prompt-injection gate; a failure means
-a payload got through, and that is a real finding, not a flaky test.
+Item 1 is a real correctness gap in the product. Items 2–4 are things only you can do,
+because they need your judgement or your accounts.
 
 ---
 
-## 2. Confirm CI is actually green
+## 1. The verifier does not check that the evidence fits the *pattern*
 
-**Why it matters:** I found that the `api` job had been failing since the tests were
-written — several tests assert against the seeded problem index, and the workflow never
-seeded. I added the seed step and reproduced the full CI sequence locally against an
-empty database (migrate → seed → 116 passing), but **I could not watch a real run** —
-the `gh` CLI is not installed on this machine, so I never saw GitHub's own result.
+**The one genuine product bug still open.** A live end-to-end run submitted an O(n²)
+brute-force two-sum and got back:
 
-Open <https://github.com/maazin/Weak_Spot/actions> and confirm the latest run is green.
-If the `api` job still fails, the log will say which test and why.
+- pattern: `complexity.list_membership_scan` — *"Tested membership against a list instead
+  of a hash set"*
+- confidence: **0.15**
+- verifier: **passed**
 
----
+The code never tests membership against a list; it does a nested-loop pair scan. The
+explanation described the nested loop correctly, so the prose and the pattern label
+disagree — and the verifier waved it through at 15% confidence.
 
-## 3. Review the Suite A fixtures
+That points at a specific gap: the verifier's first check confirms the evidence spans are
+grounded in real lines of the submission, but nothing confirms those lines actually
+demonstrate the *named pattern*. Two things worth doing:
 
-**Why it matters:** the spec asks for *you* to write these labels specifically so they
-cannot drift toward what the model would say. I wrote all 124 of them. They are
-internally consistent and the fixture tests pass, but they are my judgement, not yours —
-and Suite A's accuracy number is only meaningful if the labels are.
+1. Add a fifth verifier check: does the evidence demonstrate this specific pattern, given
+   its `signals` from the taxonomy? The signals exist precisely to make that checkable.
+2. Decide what a 0.15-confidence diagnosis should do. Serving it unqualified is probably
+   wrong; either surface the uncertainty in the UI or treat a low-confidence result as a
+   verifier rejection and escalate.
 
-Files: `api/evals/fixtures/suite_a_*.py` (one per family).
-
-Skim for cases where you would have picked a different pattern. You do not need to
-rewrite them all; even correcting the ones you disagree with makes the number defensible.
-Do this **before** quoting Suite A accuracy anywhere.
-
-Same applies, less urgently, to `suite_b_judge.py` — those human ratings are also mine.
-
----
-
-## 4. Finish the pattern-problem curation
-
-Ten pairs confirmed and five rejected so far, out of the top 200. The mechanism works;
-the remaining ~185 are un-reviewed.
-
-```bash
-cd api
-python -m weakspot.ingest.seed --review       # writes pair_candidates.yaml
-# read it; move entries into taxonomy/pair_overrides.yaml under confirmed: / rejected:
-python -m weakspot.ingest.seed --apply-review
-```
-
-`pair_candidates.yaml` is gitignored — it is scratch. Only `pair_overrides.yaml` is
-tracked, and it is re-applied on every seed, so decisions are permanent.
-
-This directly improves the recommendations users see, and it is the kind of unglamorous
-data work that separates a demo from a product.
+This may also be depressing Suite A's 75% top-1 — some of those misses are likely the same
+failure, so fixing it and re-running Suite A is the natural way to measure the impact.
 
 ---
 
-## 5. Set up GitHub OAuth
+## 2. Expand Suite C beyond 23 patterns
 
-Right now the only way in is the dev bypass, which refuses to run in production — so a
-deployed instance currently has no working sign-in.
+Suite C covers 23 of 50 patterns (46%). Every retrieval conclusion in the README rests on
+that sample, and at n=23 a 0.03 precision@3 margin is worth under one case.
 
-1. <https://github.com/settings/developers> → New OAuth App
-2. Homepage: your deployed web URL. Callback: `https://<your-api-host>/api/v1/auth/github/callback`
-3. Put the client ID and secret in `.env` locally, and in the host's secret store for deploy.
+This already bit once: a weight sweep picked `k=10`, and it did not survive being re-run
+against deterministic measurements — the conventional `k=60` won instead. The arm
+weighting held up, but the episode is a fair warning about how much this set can carry.
+
+Labelling the remaining 27 patterns is the single highest-value eval investment. Fixtures
+live in `api/evals/fixtures/`.
 
 ---
 
-## 6. Deploy
+## 3. Review the fixtures — they are my labels, not yours
 
-Both configs are written and the image is verified — I built it and ran it in production
-mode against a fresh database (migrations ran, taxonomy loaded, `/healthz` returned ok).
-What is left needs your accounts.
+The spec asks for *you* to write these specifically so they cannot drift toward what the
+model would say. I wrote all of them.
 
-You need a Postgres with **pgvector** (Neon works) and a Redis (Upstash works).
+- `suite_a_*.py` — 124 diagnosis labels. Suite A's 75.0% is only as meaningful as these.
+- `suite_b_judge.py` — 60 human ratings. **Suite B's κ = 0.258 is uninterpretable until
+  these are independently written.** Right now it measures how well the model reproduces
+  one person's judgement, not calibration against a ground truth.
 
-**Fly** — run from the repo root, since the image needs both `api/` and `taxonomy/`:
+You do not need to rewrite them all. Correcting the ones you disagree with is enough to
+make the numbers defensible.
+
+---
+
+## 4. Ship it
+
+**Open the PR.** `gh` is not installed here, so I could not create it. The branch is
+pushed:
+
+https://github.com/maazin/Weak_Spot/pull/new/fix/transient-400-and-eval-observability
+
+Or `brew install gh && gh auth login` and I can do it next session.
+
+**Confirm CI is green.** I fixed the `api` job (it never seeded, so DB-backed tests
+failed) and reproduced the full sequence locally, but `gh` is missing so I never watched a
+real run. Check <https://github.com/maazin/Weak_Spot/actions>.
+
+**GitHub OAuth.** The only way in today is the dev bypass, which refuses to run in
+production — so a deployed instance currently has no working sign-in.
+<https://github.com/settings/developers> → New OAuth App, callback
+`https://<your-api-host>/api/v1/auth/github/callback`.
+
+**Deploy.** Configs are written and the image is verified. You need a Postgres with
+pgvector (Neon) and a Redis (Upstash).
 
 ```bash
 fly launch --no-deploy -c deploy/fly.api.toml
@@ -119,54 +95,55 @@ fly secrets set ANTHROPIC_API_KEY=... VOYAGE_API_KEY=... SESSION_SECRET=... \
 fly deploy -c deploy/fly.api.toml
 ```
 
-**Render** — point a Blueprint at `deploy/render.yaml`; it defines both services. Set
-the `sync: false` secrets in the dashboard.
+Or point a Render Blueprint at `deploy/render.yaml`. The entrypoint runs
+`alembic upgrade head` before serving. Seed once after deploying, then check `/healthz`
+reports `"schema_current": true`.
 
-The entrypoint runs `alembic upgrade head` before serving, so the schema comes up on
-first boot. After deploying, seed the index once:
+Once it is live, paste the URL into <https://www.opengraph.xyz> to confirm the social card
+— that needs a real domain, so it could not be checked locally.
 
-```bash
-fly ssh console -C "python -m weakspot.ingest.seed --no-embed"   # or with embeddings
-```
-
-Then check `/healthz` reports `"schema_current": true`.
-
-**After it is live:** paste the URL into <https://www.opengraph.xyz> to confirm the
-social card renders. That check needs a real domain, so it could not be done locally.
+**Measure latency.** The README's p95 < 6s is a target, not a result; `/metrics` only
+fills in under real traffic. The one measured run was 26.8 s, but it included a verifier
+rejection and an Opus escalation, so it is a worst case.
 
 ---
 
-## 7. Optional: Langfuse tracing
+## 5. Optional
 
-Free tier at <https://cloud.langfuse.com>. Add `LANGFUSE_PUBLIC_KEY` and
-`LANGFUSE_SECRET_KEY` to `.env`. Without them tracing degrades to a no-op — nothing
-breaks, you just get no traces. Worth it if you want per-node latency and token
-attribution to point at during an interview.
+**Pair curation.** 13 of ~200 decided. `--review` exports candidates,
+`taxonomy/pair_overrides.yaml` holds decisions, `--apply-review` folds them in. Directly
+improves the recommendations users see.
+
+**Langfuse tracing.** Free tier at <https://cloud.langfuse.com>; add the two keys to
+`.env`. Without them tracing is a no-op. Worth it for per-node latency and token
+attribution to point at in an interview.
 
 ---
 
-## Known state, for reference
+## Known state
 
 | Thing | Status |
 |---|---|
-| Tests | 116 passing, verified from an empty database |
+| Tests | **127 passing**, verified from an empty database |
 | Lint | ruff + eslint clean |
-| Migrations | verified up, `alembic check` clean, downgrade round-trips |
-| MCP | real protocol, verified with the `mcp` client library and in the built image |
-| Docker image | builds from repo root, runs in production mode, migrates on boot |
-| Suite C (keyword arm) | measured: p@3 0.507, MRR 0.752 |
-| Suites A, B, D | **not run** — need `ANTHROPIC_API_KEY` |
-| Vector / hybrid retrieval | **not measured** — need `VOYAGE_API_KEY` |
-| Latency / cost percentiles | **empty** — populated by real traffic |
+| Migrations | up / `alembic check` / downgrade all verified |
+| MCP | real protocol, verified with the `mcp` client library |
+| End-to-end | verified live: real submission → diagnosis → 3 recommendations → review queue |
+| Suite D — injection | **PASS**, 40/40 valid, 0 followed |
+| Suite A — accuracy | 0.750 top-1, 0.823 top-2, macro F1 0.738, 124/124 |
+| Suite C — retrieval | hybrid 0.522 / 0.739, beats both baselines |
+| Suite B — judge | κ 0.258 — weak, and **not trustworthy until fixtures are yours** |
+| Cost per diagnosis | **$0.00343** |
+| Latency percentiles | **unmeasured** — needs real traffic |
 | CI | fixed and reproduced locally; **not observed green on GitHub** |
-| Suite A/B fixtures | written by me, not reviewed by you |
-| Pair curation | 15 of ~200 decided |
+| Fixtures | written by me, not reviewed by you |
+| Deploy / OAuth | configured, not executed |
 
 ## One deliberate deviation from the spec
 
 The spec lists LangChain as the LLM client. The code uses the Anthropic SDK directly and
-keeps LangGraph for orchestration — driven by three other spec requirements (exact
+keeps LangGraph for orchestration — driven by three other spec requirements: exact
 `cache_control` placement, reading real `cache_read_input_tokens` for cost, and forced
-`tool_choice` schema enforcement). It is isolated in `api/weakspot/llm.py`, so reverting
-is a single-file change. This is stated in the README too, so it reads as a decision
-rather than an oversight.
+`tool_choice` schema enforcement. It is isolated in `api/weakspot/llm.py`, so reverting is
+a single-file change. Stated in the README too, so it reads as a decision rather than an
+oversight.
