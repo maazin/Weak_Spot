@@ -674,6 +674,29 @@
     - pattern_selection.hashmap_over_two_pointers
   practice_tags: [hash-set, optimization, array]
 
+- id: complexity.pairwise_scan_over_hashing
+  family: complexity
+  name: Compared every pair where one pass with a hash map would do
+  signals:
+    - an outer loop over indices with an inner loop starting at the outer index plus one
+    - the inner loop tests a relationship between exactly two elements
+    - no auxiliary map or set is allocated anywhere in the function
+    - the quantity being searched for can be derived from the current element
+  correct_approach: >
+    Comparing every pair is the first thing that comes to mind and it is quadratic. The
+    move is to ask what you would need to have already seen to answer the question at
+    the current element alone — for a target sum, the complement; for a duplicate, the
+    value itself. Store what you have seen in a hash map as you go and each element
+    needs one constant-time lookup rather than a scan over everything after it. The
+    outer loop stays, the inner loop disappears, and the cost drops from quadratic to
+    linear at the price of linear extra space. If the input is sorted, or sorting it is
+    cheap relative to the scan, two pointers achieves the same in constant extra space.
+  related_patterns:
+    - complexity.list_membership_scan
+    - pattern_selection.hashmap_over_two_pointers
+    - pattern_selection.nested_loops_over_sliding_window
+  practice_tags: [hash-map, array, optimization]
+
 - id: complexity.sort_inside_loop
   family: complexity
   name: Sorted inside a loop that could have sorted once

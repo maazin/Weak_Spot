@@ -129,6 +129,8 @@ Five nodes. State carries the submission, intermediate findings, and a retry cou
        │ 2 consistent w/ failure│                       │
        │ 3 no solution code     │                       │
        │ 4 no injected command  │                       │
+       │ 5 evidence fits pattern│                       │
+       │ + confidence floor     │                       │
        └───────┬────────┬───────┘                       │
        rejected│        │passed                         │
     (once, then│        ▼                               ▼
@@ -238,7 +240,7 @@ cp .env.example .env          # fill in keys; it boots without them
 make up                       # postgres + redis
 cd api && python -m venv .venv && .venv/bin/pip install -e ".[dev]"
 make migrate                  # alembic upgrade head — creates the schema
-make seed                     # 205 problems, 50 patterns, links (no keys needed)
+make seed                     # 205 problems, 51 patterns, links (no keys needed)
 make api                      # http://localhost:8000
 make web                      # http://localhost:5173
 ```
@@ -279,7 +281,7 @@ local Postgres. Inside the compose network the API still talks to `postgres:5432
 
 ## The taxonomy
 
-50 failure modes across four families, in `taxonomy/patterns.yaml`. This is the closed
+51 failure modes across four families, in `taxonomy/patterns.yaml`. This is the closed
 set the diagnoser may emit; the tool schema's `enum` enforces it, not a prompt
 instruction.
 
@@ -287,7 +289,7 @@ instruction.
 |---|---|---|
 | `pattern_selection` | wrong algorithmic shape chosen | 13 |
 | `implementation` | correct shape, wrong details | 16 |
-| `complexity` | correct and too slow | 10 |
+| `complexity` | correct and too slow | 11 |
 | `comprehension` | misread the problem | 11 |
 
 Every entry carries concrete, checkable `signals` — properties of submitted code, not

@@ -497,4 +497,56 @@ func twoSum(nums []int, target int) []int {
 }
 """,
     },
+    {
+        "id": "a125",
+        "problem_slug": "two-sum",
+        "language": "python",
+        "failure_type": "tle",
+        "pattern_id": "complexity.pairwise_scan_over_hashing",
+        "code": """\
+class Solution:
+    def twoSum(self, nums, target):
+        for i in range(len(nums)):
+            for j in range(i + 1, len(nums)):
+                if nums[i] + nums[j] == target:
+                    return [i, j]
+        return []
+""",
+    },
+    {
+        "id": "a126",
+        "problem_slug": "contains-duplicate",
+        "language": "python",
+        "failure_type": "tle",
+        "pattern_id": "complexity.pairwise_scan_over_hashing",
+        "code": """\
+def containsDuplicate(nums):
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            if nums[i] == nums[j]:
+                return True
+    return False
+""",
+    },
+    {
+        "id": "a127",
+        "problem_slug": "3sum",
+        "language": "java",
+        "failure_type": "tle",
+        "pattern_id": "complexity.pairwise_scan_over_hashing",
+        "code": """\
+class Solution {
+    public boolean hasPairWithSum(int[] nums, int target) {
+        for (int i = 0; i < nums.length; i++) {
+            for (int j = i + 1; j < nums.length; j++) {
+                if (nums[i] + nums[j] == target) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+""",
+    },
 ]
