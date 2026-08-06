@@ -1,6 +1,6 @@
 # Weakspot evaluation
 
-Measured against the seeded index (205 problems, 50 patterns) on a local run.
+Measured against the seeded index (205 problems, 51 patterns) on a local run.
 Every figure here is the latest row for its suite in the `eval_runs` table.
 Reproduce with `make eval`.
 
@@ -65,37 +65,42 @@ see is the price of the legal constraint, and it is the clearest target for impr
 
 ## Suite C — retrieval quality
 
-23 patterns with at least one labelled positive, drawn from 106 hand-labelled
-`(pattern, problem)` pairs. Negatives are deliberately plausible: same family, adjacent
-topic, or overlapping tags.
+246 hand-labelled `(pattern, problem)` pairs covering all 51 patterns; every pattern has at
+least one positive. Negatives are deliberately plausible: same family, adjacent topic, or
+overlapping tags.
 
 | arm | precision@3 | MRR |
 |---|---|---|
-| keyword only | 0.493 | 0.693 |
-| vector only | 0.420 | 0.642 |
-| **hybrid (RRF, k=60, weighted)** | **0.522** | **0.739** |
+| keyword only | 0.392 | 0.578 |
+| vector only | 0.340 | 0.522 |
+| **hybrid (RRF, k=60, weighted 3:1)** | **0.412** | **0.636** |
 
-Fusion beats both baselines on both metrics, which is the bar the spec sets. Two things
-were required to get there, and neither is the fusion itself:
+Fusion beats both baselines on both metrics, which is the bar the spec sets.
 
-- **Weighting the arms 3:1 in favour of keyword.** Unweighted RRF scored 0.478 — *worse*
-  than the keyword arm alone. The vector arm is a strictly lossier view of the same
-  information: embeddings only ever see title, difficulty and tags, which is exactly what
-  the keyword arm indexes directly and exactly. An equal vote let the weaker arm push
-  correct results out of the top 3.
-- **Embedding patterns on tags alone.** Including the `correct_approach` paragraph made
-  the two sides of the comparison different kinds of text, and similarity tracked length
-  and register as much as subject. Dropping it moved the vector arm from 0.348 to 0.420.
+The absolute figures sit below the earlier 23-pattern measurement (hybrid 0.522 / 0.739).
+That is expected: the 28 patterns added to reach full coverage are the harder ones, since
+the subset labelled first was also the subset whose practice tags map most cleanly onto
+problems. These numbers are the more representative ones.
 
-**Caveat, stated plainly.** 23 patterns is 46% of the taxonomy, so a 0.03 margin is worth
-under one case. An earlier sweep picked `k=10` on this set; it did not survive once the
-measurements were made deterministic, and the conventional `k=60` won instead. Treat the
-weighting as a reasoned default the evidence supports, not a tuned optimum. Expanding
-Suite C is the highest-value eval work outstanding.
+### Two claims that did not survive the expansion
 
-Measurements are reproducible: both arms order by a stable tiebreaker, and Suite C
-returns identical metrics across repeated runs and a `VACUUM FULL`. Before that fix the
-keyword arm scored 0.522 and then 0.507 on identical data and identical code.
+Recorded because they are a concrete lesson about tuning against a 23-case set:
+
+- **`k=10` beat `k=60`** on the small suite. On the full suite `k=60` wins (0.412 vs
+  0.399) and the conventional default was right.
+- **Unweighted fusion scored worse than the keyword arm** on the small suite, which was
+  the original argument for weighting the arms. On the full suite unweighted fusion
+  already beats keyword on both metrics (0.399 / 0.634); the 3:1 weighting adds a further
+  0.013 precision@3 rather than rescuing a loss.
+
+The weighting is retained: it is the best configuration measured on both suite sizes, and
+it has an argument independent of the sweep — the vector arm is a strictly lossier view of
+the same information, since copyright means embeddings never see more than title,
+difficulty and tags, which is exactly what the keyword arm indexes directly.
+
+Measurements are reproducible: both arms order by a stable tiebreaker, and Suite C returns
+identical metrics across repeated runs and a `VACUUM FULL`. Before that fix the keyword arm
+scored 0.522 and then 0.507 on identical data and identical code.
 
 ---
 

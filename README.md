@@ -53,26 +53,31 @@ the legal constraint below, and it is the clearest target for improvement.
 
 ### Retrieval quality — Suite C
 
-23 patterns with a labelled positive, from 106 hand-labelled `(pattern, problem)` pairs.
-Negatives are deliberately plausible: same family, adjacent topic, or overlapping tags.
+246 hand-labelled `(pattern, problem)` pairs covering **all 51 patterns** — every pattern
+carries at least one positive. Negatives are deliberately plausible: same family, adjacent
+topic, or overlapping tags.
 
 | arm | precision@3 | MRR |
 |---|---|---|
-| keyword only | 0.493 | 0.693 |
-| vector only | 0.420 | 0.642 |
-| **hybrid (RRF, k=60, weighted 3:1)** | **0.522** | **0.739** |
+| keyword only | 0.392 | 0.578 |
+| vector only | 0.340 | 0.522 |
+| **hybrid (RRF, k=60, weighted 3:1)** | **0.412** | **0.636** |
 
-Fusion beats both baselines on both metrics — but only after two corrections, and neither
-is the fusion itself. Unweighted RRF scored 0.478, *worse* than keyword alone: the vector
-arm is a strictly lossier view of the same information, since embeddings only ever see
-title, difficulty and tags, which is exactly what the keyword arm indexes directly. And
-embedding patterns on tags alone rather than on their full prose moved the vector arm from
-0.348 to 0.420.
+Fusion beats both baselines on both metrics. The absolute numbers are lower than they were
+on an earlier 23-pattern subset because the patterns added since are the harder ones — the
+subset that happened to be labelled first was also the subset whose practice tags map most
+cleanly onto problems. These are the more representative figures.
 
-**23 patterns is 46% of the taxonomy, so a 0.03 margin is worth under one case.** An
-earlier sweep picked `k=10` here; it did not survive once measurements were made
-deterministic, and the conventional `k=60` won. Expanding this suite is the highest-value
-eval work outstanding.
+Embedding patterns on tags alone rather than on their full prose is what makes the vector
+arm usable at all: the problem side embeds roughly ten words of metadata, and matching that
+against a paragraph made similarity track length and register as much as subject.
+
+Two tuning claims from the 23-pattern version did **not** survive the expansion, and are
+worth recording as a caution about small eval sets. `k=10` beat `k=60` there; on the full
+suite `k=60` wins and the conventional default was right all along. And unweighted fusion
+scored *worse* than the keyword arm there, which was the original argument for weighting;
+on the full suite unweighted fusion already beats keyword on both metrics (0.399 / 0.634),
+and the 3:1 weighting adds a smaller further gain rather than rescuing it.
 
 ### Judge calibration — Suite B
 
