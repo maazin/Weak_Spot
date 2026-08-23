@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { ErrorNote, Spinner } from '../components/Chrome';
+import { ErrorNote, Page, Spinner } from '../components/Chrome';
 
 const FAMILY_LABEL = {
   pattern_selection: 'Pattern selection',
@@ -10,34 +10,56 @@ const FAMILY_LABEL = {
   comprehension: 'Comprehension',
 };
 
-/** The user's own code with the evidence lines highlighted. */
+function Section({ title, children, id }) {
+  return (
+    <section aria-labelledby={id} className="border-t border-hairline pt-7">
+      <h2 id={id} className="eyebrow">
+        {title}
+      </h2>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+/** The submitted code with the cited lines marked by a rule and a tinted ground. */
 function CodeWithEvidence({ code, spans }) {
   const lines = code.split('\n');
-  const highlighted = new Set();
+  const cited = new Set();
   spans.forEach((span) => {
-    for (let n = span.start_line; n <= span.end_line; n += 1) highlighted.add(n);
+    for (let n = span.start_line; n <= span.end_line; n += 1) cited.add(n);
   });
 
   return (
-    <pre className="overflow-x-auto rounded-md border border-edge bg-bg p-0 text-[13px] leading-relaxed">
-      <code className="block font-mono">
-        {lines.map((line, index) => {
-          const number = index + 1;
-          const isEvidence = highlighted.has(number);
-          return (
-            <span
-              key={number}
-              className={`flex ${isEvidence ? 'bg-accent/10 border-l-2 border-accent' : 'border-l-2 border-transparent'}`}
-            >
-              <span className="w-12 shrink-0 select-none px-2 text-right text-muted">
-                {number}
+    <div className="overflow-hidden rounded border border-hairline bg-surface">
+      <pre className="overflow-x-auto text-[13px] leading-[1.7]">
+        <code className="block font-mono">
+          {lines.map((line, index) => {
+            const number = index + 1;
+            const isCited = cited.has(number);
+            return (
+              <span
+                key={number}
+                className={[
+                  'flex border-l-2',
+                  isCited ? 'border-brass bg-brass/[0.07]' : 'border-transparent',
+                ].join(' ')}
+              >
+                <span
+                  aria-hidden="true"
+                  className={[
+                    'w-12 shrink-0 select-none px-2 text-right tabular-nums',
+                    isCited ? 'font-semibold text-brass' : 'text-ink-3',
+                  ].join(' ')}
+                >
+                  {number}
+                </span>
+                <span className="whitespace-pre px-3 text-ink">{line || ' '}</span>
               </span>
-              <span className="whitespace-pre px-2 text-zinc-200">{line || ' '}</span>
-            </span>
-          );
-        })}
-      </code>
-    </pre>
+            );
+          })}
+        </code>
+      </pre>
+    </div>
   );
 }
 
@@ -57,116 +79,126 @@ export default function Diagnosis() {
     };
   }, [id]);
 
-  if (error) return <div className="mx-auto max-w-3xl px-4 py-8"><ErrorNote>{error}</ErrorNote></div>;
-  if (!data) return <Spinner label="Loading diagnosis…" />;
+  if (error)
+    return (
+      <Page>
+        <ErrorNote>{error}</ErrorNote>
+      </Page>
+    );
+  if (!data) return <Spinner label="Loading diagnosis" />;
 
   const { submission, diagnosis, recommendations } = data;
 
   if (!diagnosis) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <ErrorNote>This submission has no diagnosis yet.</ErrorNote>
-      </div>
+      <Page>
+        <ErrorNote>This submission has no diagnosis recorded.</ErrorNote>
+      </Page>
     );
   }
 
+  const confidence = Math.round(diagnosis.confidence * 100);
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <div>
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="rounded bg-accent/15 px-2 py-0.5 font-medium text-accent">
-            {FAMILY_LABEL[diagnosis.pattern.family] ?? diagnosis.pattern.family}
-          </span>
-          <span className="text-muted">
-            confidence {(diagnosis.confidence * 100).toFixed(0)}%
-          </span>
-          {!diagnosis.verifier_passed && (
-            <span className="rounded border border-amber-800 px-2 py-0.5 text-amber-500">
-              unverified
-            </span>
-          )}
-        </div>
-        <h1 className="text-xl font-semibold leading-snug tracking-tight text-zinc-50">
+    <Page>
+      <header className="mb-9">
+        <p className="eyebrow">
+          {FAMILY_LABEL[diagnosis.pattern.family] ?? diagnosis.pattern.family}
+        </p>
+        <h1 className="mt-3 max-w-prose font-serif text-display font-semibold text-ink">
           {diagnosis.pattern.name}
         </h1>
-        <p className="mt-1 text-xs text-muted">
-          on{' '}
+
+        <p className="mt-4 text-caption text-ink-2">
           <a
             href={submission.problem.url}
             target="_blank"
             rel="noreferrer"
-            className="text-zinc-400 underline decoration-edge hover:text-accent"
+            className="link"
           >
             {submission.problem.title}
-          </a>{' '}
-          · reported {submission.failure_type.replace(/_/g, ' ')}
+          </a>
+          <span className="px-2 text-ink-3">/</span>
+          reported {submission.failure_type.replace(/_/g, ' ')}
         </p>
-      </div>
 
-      <div className="card">
-        <h2 className="label">The gap</h2>
-        <p className="text-sm leading-relaxed text-zinc-300">{diagnosis.explanation}</p>
-      </div>
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          <span className="chip tabular-nums">Confidence {confidence}%</span>
+          <span className="chip">
+            {diagnosis.verifier_passed ? 'Verified' : 'Unverified'}
+          </span>
+          {diagnosis.retry_count > 0 && <span className="chip">Escalated</span>}
+        </div>
 
-      <div className="card">
-        <h2 className="label">What the correct shape looks like</h2>
-        <p className="text-sm leading-relaxed text-zinc-400">
-          {diagnosis.pattern.correct_approach}
-        </p>
-      </div>
+        {!diagnosis.verifier_passed && (
+          <div className="mt-5">
+            <ErrorNote tone="info">
+              The verifier could not confirm this one. Read it as a suggestion and check
+              the cited lines yourself.
+            </ErrorNote>
+          </div>
+        )}
+      </header>
 
-      <div>
-        <h2 className="label">Your code, with the evidence highlighted</h2>
-        <CodeWithEvidence
-          code={submission.code_text}
-          spans={diagnosis.evidence_spans}
-        />
-        <ul className="mt-3 space-y-1.5">
-          {diagnosis.evidence_spans.map((span, index) => (
-            <li key={index} className="text-xs text-zinc-400">
-              <span className="mr-2 font-mono text-accent">
-                L{span.start_line}
-                {span.end_line !== span.start_line ? `–${span.end_line}` : ''}
-              </span>
-              {span.why}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <div className="space-y-9">
+        <Section id="gap" title="The gap">
+          <p className="max-w-prose text-body text-ink">{diagnosis.explanation}</p>
+        </Section>
 
-      <div>
-        <h2 className="label">Practice these three</h2>
-        {recommendations.length === 0 ? (
-          <p className="text-sm text-muted">
-            No new problems to recommend — you have already queued or attempted the close
-            matches for this pattern.
+        <Section id="shape" title="What the correct shape looks like">
+          <p className="max-w-prose text-body text-ink-2">
+            {diagnosis.pattern.correct_approach}
           </p>
-        ) : (
-          <ul className="space-y-2">
-            {recommendations.map((problem) => (
-              <li key={problem.id}>
-                <a
-                  href={problem.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="card flex items-center gap-3 hover:border-accent/60"
-                >
-                  <span className="flex-1 text-sm text-zinc-200">{problem.title}</span>
-                  <span className="tag capitalize">{problem.difficulty}</span>
-                  <span className="text-xs text-muted">↗</span>
-                </a>
+        </Section>
+
+        <Section id="evidence" title="Your code, with the cited lines marked">
+          <CodeWithEvidence code={submission.code_text} spans={diagnosis.evidence_spans} />
+          <ul className="mt-5 space-y-3">
+            {diagnosis.evidence_spans.map((span, index) => (
+              <li key={index} className="flex gap-3 text-caption">
+                <span className="shrink-0 font-mono font-semibold text-brass tabular-nums">
+                  {span.start_line}
+                  {span.end_line !== span.start_line ? `-${span.end_line}` : ''}
+                </span>
+                <span className="max-w-prose text-ink-2">{span.why}</span>
               </li>
             ))}
           </ul>
-        )}
-        <p className="mt-3 text-xs text-muted">
-          These are now in your{' '}
-          <Link to="/reviews" className="text-zinc-400 underline hover:text-accent">
-            review queue
-          </Link>
-          , first due in three days.
-        </p>
+        </Section>
+
+        <Section id="practice" title="Practice these next">
+          {recommendations.length === 0 ? (
+            <p className="max-w-prose text-body text-ink-2">
+              Nothing new to recommend. The close matches for this pattern are already
+              queued or attempted.
+            </p>
+          ) : (
+            <ul className="divide-y divide-hairline border-y border-hairline">
+              {recommendations.map((problem) => (
+                <li key={problem.id}>
+                  <a
+                    href={problem.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-h-11 items-center gap-4 py-4 transition-colors hover:bg-raised/60"
+                  >
+                    <span className="flex-1 text-body text-ink">{problem.title}</span>
+                    <span className="chip capitalize">{problem.difficulty}</span>
+                    <span className="text-micro text-ink-3">Opens on the source site</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-5 text-caption text-ink-2">
+            These are in your{' '}
+            <Link to="/reviews" className="link">
+              review queue
+            </Link>
+            , first due in three days.
+          </p>
+        </Section>
       </div>
-    </div>
+    </Page>
   );
 }

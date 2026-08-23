@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { EmptyState, ErrorNote, Spinner } from '../components/Chrome';
-
-const RESULTS = [
-  ['solved', 'Solved'],
-  ['failed', 'Failed'],
-  ['skipped', 'Skip'],
-];
+import { EmptyState, ErrorNote, Page, PageHeader, Spinner } from '../components/Chrome';
 
 export default function Reviews() {
   const [data, setData] = useState(null);
@@ -35,97 +29,110 @@ export default function Reviews() {
     }
   }
 
-  if (error && !data) {
+  if (error && !data)
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <Page>
         <ErrorNote>{error}</ErrorNote>
-      </div>
+      </Page>
     );
-  }
-  if (!data) return <Spinner label="Loading your queue…" />;
+  if (!data) return <Spinner label="Loading your queue" />;
 
-  // Two distinct empty states: nothing queued at all, versus a queue that is clear
-  // for today.
+  // Two distinct empty states: nothing queued at all, against a queue clear for today.
   if (data.items.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <Page>
         {data.total_items === 0 ? (
-          <EmptyState
-            image="/assets/empty-done.png"
-            alt=""
-            title="Nothing queued yet"
-          >
-            Diagnose a failed attempt and its three recommended problems land here on a
+          <EmptyState title="Nothing queued yet">
+            Diagnose a failed attempt and the problems it recommends arrive here on a
             spaced schedule.
           </EmptyState>
         ) : (
-          <EmptyState
-            image="/assets/empty-queue.png"
-            alt=""
-            title="Nothing due today"
-          >
-            You have {data.total_items} problem{data.total_items === 1 ? '' : 's'} in the
-            queue. The next one comes back around when its interval elapses.
+          <EmptyState title="Nothing due today">
+            {data.total_items} problem{data.total_items === 1 ? '' : 's'} remain in the
+            queue. Each returns when its interval elapses.
           </EmptyState>
         )}
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-4 py-8">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
-          Due today
-        </h1>
-        <p className="text-xs text-muted">
-          {data.items.length} of {data.total_items} queued
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        title="Due today"
+        aside={
+          <span className="text-caption tabular-nums text-ink-2">
+            {data.items.length} of {data.total_items} queued
+          </span>
+        }
+      />
 
-      <ErrorNote>{error}</ErrorNote>
+      {error && (
+        <div className="mb-6">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
 
-      <ul className="space-y-3">
-        {data.items.map((item) => (
-          <li key={item.id} className="card">
-            <div className="flex flex-wrap items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <a
-                  href={item.problem.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm font-medium text-zinc-100 hover:text-accent"
-                >
-                  {item.problem.title} ↗
-                </a>
-                <p className="mt-1 text-xs text-muted">
-                  drilling <span className="text-zinc-400">{item.pattern_name}</span>
-                </p>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="tag capitalize">{item.problem.difficulty}</span>
-                  <span className="tag">
-                    interval {item.interval_days.toFixed(1)}d
-                  </span>
-                  <span className="tag">reps {item.repetitions}</span>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                {RESULTS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    onClick={() => complete(item.id, value)}
-                    disabled={pending === item.id}
-                    className={value === 'solved' ? 'btn-primary' : 'btn-ghost'}
+      <ul className="divide-y divide-hairline border-y border-hairline">
+        {data.items.map((item) => {
+          const busy = pending === item.id;
+          return (
+            <li key={item.id} className="py-6">
+              <div className="flex flex-wrap items-start justify-between gap-5">
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={item.problem.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-lead font-medium text-ink underline decoration-hairline decoration-1 underline-offset-[3px] hover:decoration-brass"
                   >
-                    {label}
+                    {item.problem.title}
+                  </a>
+                  <p className="mt-1.5 text-caption text-ink-2">
+                    Drilling {item.pattern_name}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="chip capitalize">{item.problem.difficulty}</span>
+                    <span className="chip tabular-nums">
+                      Interval {item.interval_days.toFixed(1)}d
+                    </span>
+                    <span className="chip tabular-nums">
+                      {item.repetitions} rep{item.repetitions === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                </div>
+
+                <fieldset className="flex shrink-0 items-center gap-2" disabled={busy}>
+                  <legend className="sr-only">
+                    Result for {item.problem.title}
+                  </legend>
+                  <button
+                    type="button"
+                    onClick={() => complete(item.id, 'solved')}
+                    className="btn-primary"
+                  >
+                    Solved
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => complete(item.id, 'failed')}
+                    className="btn-secondary"
+                  >
+                    Failed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => complete(item.id, 'skipped')}
+                    className="btn-quiet"
+                  >
+                    Skip
+                  </button>
+                </fieldset>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
-    </div>
+    </Page>
   );
 }

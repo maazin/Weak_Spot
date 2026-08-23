@@ -1,4 +1,4 @@
-# Weakspot pattern taxonomy — the closed set of failure modes the diagnoser may emit.
+# Weakspot pattern taxonomy: the closed set of failure modes the diagnoser may emit.
 #
 # All `correct_approach` text is original prose written for this project. No editorial
 # or problem-statement text from any judge site appears here, and none may be added.
@@ -9,10 +9,10 @@
 # code the user wrote does not belong in this file.
 #
 # Families:
-#   pattern_selection — wrong algorithmic shape chosen
-#   implementation    — right shape, wrong details
-#   complexity        — correct and too slow
-#   comprehension     — misread the problem
+#   pattern_selection : wrong algorithmic shape chosen
+#   implementation    : right shape, wrong details
+#   complexity        : correct and too slow
+#   comprehension     : misread the problem
 
 # ---------------------------------------------------------------------------
 # pattern_selection
@@ -109,8 +109,8 @@
   correct_approach: >
     When you move a window's right edge by one, the contents change by exactly one
     element added, and when the left edge advances, exactly one is removed. Any
-    aggregate that supports both an add and a remove — a running sum, a frequency
-    counter, a distinct-element count — can therefore be maintained in constant time
+    aggregate that supports both an add and a remove, such as a running sum, a frequency
+    counter, or a distinct-element count, can therefore be maintained in constant time
     per step rather than rebuilt. The nested-loop version recomputes from scratch
     what the previous iteration already knew. Ask what changes between adjacent
     windows; usually it is one element on each side, and that is the whole trick.
@@ -210,7 +210,7 @@
     Next-greater-element questions have a shared structure: once an element has a
     larger neighbour to its right, it can never be the answer for anything further
     right, so it can be discarded permanently. A stack that you keep in increasing or
-    decreasing order captures exactly that reasoning — you pop everything the new
+    decreasing order captures exactly that reasoning: you pop everything the new
     element dominates, and each element is pushed and popped at most once, giving a
     linear total. Histogram areas, daily temperatures, and stock spans are all this
     pattern wearing different clothes.
@@ -232,7 +232,7 @@
     idea extends to counts, XORs, and two-dimensional regions. The trade is one array
     of extra memory against turning every query from linear to constant. When the
     data does change between queries, this is the point at which a Fenwick or segment
-    tree earns its complexity — but reach for those only once a plain prefix array is
+    tree earns its complexity, but reach for those only once a plain prefix array is
     genuinely ruled out.
   related_patterns:
     - complexity.redundant_full_recomputation_per_query
@@ -316,7 +316,7 @@
     stops shrinking and the loop spins forever. Two fixes exist and you should choose
     deliberately: either advance low past the midpoint, or bias the midpoint upward
     when it is low that moves. The tell for this bug is a timeout on an input far too
-    small to be genuinely slow — that is a hang, not a performance problem.
+    small to be genuinely slow. That is a hang rather than a performance problem.
   related_patterns:
     - implementation.binary_search_bounds_off_by_one
   practice_tags: [binary-search, array]
@@ -331,7 +331,7 @@
   correct_approach: >
     In breadth-first search a node can be discovered by several neighbours in the
     same layer. If you only mark it once it comes off the queue, every one of those
-    neighbours pushes its own copy first, and the queue grows with duplicates — which
+    neighbours pushes its own copy first, and the queue grows with duplicates, which
     costs memory, repeats work, and can corrupt a level-by-level distance count. Mark
     the node the instant you push it. The invariant to hold is that membership in the
     visited set means "already scheduled", not "already processed".
@@ -472,7 +472,7 @@
     small means the only way to improve is to raise the low end; too large means
     lower the high end. On a variable window, the grow and shrink conditions must be
     exact complements, or the window will either never shrink or shrink past the
-    valid region. Trace the case where both values are equal — that is where the
+    valid region. Trace the case where both values are equal, since that is where the
     missing branch usually hides.
   related_patterns:
     - pattern_selection.nested_loops_over_sliding_window
@@ -509,8 +509,8 @@
     A sort key must be a total description of the ordering you want, including how
     ties break. Sorting on one field and hoping the secondary order survives relies
     on stability that may not hold across the transformations you apply afterwards.
-    Where the ordering is genuinely relational rather than by key — arranging strings
-    so their concatenation is largest, for instance — the comparison has to be
+    Where the ordering is genuinely relational rather than by key, as when arranging strings
+    so their concatenation is largest, the comparison has to be
     written between two candidates directly, and it must be consistent: if it says a
     beats b and b beats c, it has to say a beats c.
   related_patterns:
@@ -528,7 +528,7 @@
   correct_approach: >
     Reversing or splicing a list is a fixed choreography: save the successor, rewire
     the current node, then advance. Doing the rewire first strands the rest of the
-    list. The second recurring problem is the head itself — whenever the first node
+    list. The second recurring problem is the head itself. Whenever the first node
     might be removed or replaced, a dummy node in front removes the special case
     entirely and lets one code path handle every position. Draw three nodes and the
     pointers at each step before writing the loop.
@@ -567,7 +567,7 @@
     midpoint can wrap negative; subtracting and halving the difference cannot. The
     same care applies to running products, which need a wider type or the modulus the
     problem specifies applied at every step rather than once at the end. Separately,
-    floating point should never be compared for equality — compare against a
+    floating point should never be compared for equality. Compare against a
     tolerance, or restructure to stay in integers, which is usually possible.
   related_patterns:
     - implementation.binary_search_bounds_off_by_one
@@ -626,8 +626,8 @@
     - one extra factor of n over the intended complexity
   correct_approach: >
     Anything whose value does not change across iterations belongs above the loop.
-    The costly version of this is rebuilding a structure — a set, a frequency map, a
-    sorted copy — inside the body when it could be built once and updated
+    The costly version of this is rebuilding a structure, whether a set, a frequency map, or a
+    sorted copy, inside the body when it could be built once and updated
     incrementally, or not at all. This is the single most common way an intended
     linear solution becomes quadratic. Read each line of the loop body and ask
     whether it depends on the loop variable; if it does not, hoist it.
@@ -664,7 +664,7 @@
     - quadratic behaviour with no nested loop visible in the source
   correct_approach: >
     A membership test on a list walks it element by element, so putting one inside a
-    loop is a nested loop that does not look like one — which is exactly why it
+    loop is a nested loop that does not look like one, which is exactly why it
     survives review. Converting the container to a hash set makes each test constant
     time and usually requires changing one line. The same applies to searching for an
     index inside a loop. Whenever you see a containment check in a hot path, check
@@ -685,7 +685,7 @@
   correct_approach: >
     Comparing every pair is the first thing that comes to mind and it is quadratic. The
     move is to ask what you would need to have already seen to answer the question at
-    the current element alone — for a target sum, the complement; for a duplicate, the
+    the current element alone: for a target sum, the complement; for a duplicate, the
     value itself. Store what you have seen in a hash map as you go and each element
     needs one constant-time lookup rather than a scan over everything after it. The
     outer loop stays, the inner loop disappears, and the cost drops from quadratic to
@@ -709,7 +709,7 @@
     same each time and the sort belongs outside; where it genuinely changes by one
     element per iteration, a heap or an ordered structure maintains the order
     incrementally at log cost instead of resorting from scratch. Ask what actually
-    changed since the last sort — if the answer is "one element", you want a heap,
+    changed since the last sort. If the answer is "one element", you want a heap,
     and if the answer is "nothing", you want to hoist it.
   related_patterns:
     - complexity.recompute_inside_loop
@@ -763,8 +763,8 @@
     Copying the working state at each level is easy to reason about and expensive to
     run: the allocation is paid at every node of the recursion tree. Mutating a single
     shared structure and undoing the change on the way out gives identical semantics
-    for a constant cost per level. The trade is real — the mutate-and-undo version has
-    to be exactly right about the undo — but on inputs large enough to hit a memory
+    for a constant cost per level. The trade is real, because the mutate-and-undo version has
+    to be exactly right about the undo, but on inputs large enough to hit a memory
     limit it is the only version that finishes.
   related_patterns:
     - implementation.backtracking_state_not_restored
@@ -903,7 +903,7 @@
     ahead, swapping between positions, or encoding a second piece of information into
     the existing values. Building a fresh structure and copying it back does not
     satisfy it. Note whether the function is expected to return the collection or to
-    mutate the argument and return a count — those are different contracts.
+    mutate the argument and return a count. Those are different contracts.
   related_patterns:
     - comprehension.missed_return_format
     - implementation.in_place_mutation_while_iterating

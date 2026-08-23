@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 
@@ -7,7 +8,40 @@ const LINKS = [
   { to: '/patterns', label: 'Weak patterns' },
 ];
 
-/** Nav uses the mark at 30px, not the wordmark lockup — too wide at this height. */
+/* ------------------------------------------------------------------ appearance */
+
+/**
+ * Three states rather than a boolean, so "follow the system" stays reachable after
+ * someone has made a manual choice. The control is labelled in words, since a sun or
+ * moon glyph carries no meaning to a screen reader.
+ */
+export function ThemeToggle() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('weakspot-theme') || 'system');
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+    localStorage.setItem('weakspot-theme', theme);
+  }, [theme]);
+
+  const next = { system: 'light', light: 'dark', dark: 'system' }[theme];
+  const label = { system: 'Auto', light: 'Light', dark: 'Dark' }[theme];
+
+  return (
+    <button
+      type="button"
+      onClick={() => setTheme(next)}
+      className="btn-quiet text-micro font-medium tabular-nums"
+      aria-label={`Appearance is ${label.toLowerCase()}. Switch to ${next}.`}
+    >
+      {label}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ navigation */
+
 export function Nav({ user, onSignOut }) {
   const navigate = useNavigate();
 
@@ -18,24 +52,32 @@ export function Nav({ user, onSignOut }) {
   }
 
   return (
-    <header className="border-b border-edge">
-      <div className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">
-        <NavLink to="/submit" className="flex items-center gap-2">
-          <img src="/assets/mark.svg" alt="Weakspot" width="30" height="30" />
-          <span className="text-sm font-semibold tracking-tight text-zinc-100">
+    <header className="sticky top-0 z-20 border-b border-hairline bg-canvas/90 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-5xl items-center gap-2 px-4 sm:px-6">
+        <NavLink
+          to="/submit"
+          className="flex shrink-0 items-center gap-2.5 pr-3"
+          aria-label="Weakspot home"
+        >
+          <img src="/assets/mark.svg" alt="" width="24" height="24" />
+          <span className="hidden font-serif text-[15px] font-semibold tracking-tight text-ink sm:block">
             Weakspot
           </span>
         </NavLink>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav aria-label="Primary" className="flex items-center gap-1">
           {LINKS.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `rounded px-2.5 py-1.5 transition-colors ${
-                  isActive ? 'bg-surface text-accent' : 'text-zinc-400 hover:text-zinc-100'
-                }`
+                [
+                  'flex min-h-11 items-center rounded px-3 text-caption transition-colors',
+                  // Fill and weight carry the active state, so it survives without colour.
+                  isActive
+                    ? 'bg-raised font-semibold text-ink'
+                    : 'font-medium text-ink-2 hover:bg-raised/60 hover:text-ink',
+                ].join(' ')
               }
             >
               {link.label}
@@ -43,49 +85,89 @@ export function Nav({ user, onSignOut }) {
           ))}
         </nav>
 
-        {user && (
-          <div className="ml-auto flex items-center gap-3 text-xs text-muted">
-            <span>{user.handle}</span>
-            <button onClick={signOut} className="hover:text-zinc-200">
-              Sign out
-            </button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          <ThemeToggle />
+          {user && (
+            <>
+              <span className="hidden px-2 text-micro text-ink-2 sm:block">{user.handle}</span>
+              <button type="button" onClick={signOut} className="btn-quiet text-micro">
+                Sign out
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );
 }
 
-export function EmptyState({ image, alt, title, children }) {
+/* ------------------------------------------------------------------ page shell */
+
+export function Page({ children, width = 'default' }) {
+  const max = width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
+  return <main className={`mx-auto ${max} px-4 py-10 sm:px-6 sm:py-14`}>{children}</main>;
+}
+
+export function PageHeader({ title, children, aside }) {
   return (
-    <div className="flex flex-col items-center py-12 text-center">
-      <img src={image} alt={alt} className="mb-6 w-56 max-w-full opacity-90" />
-      <h2 className="text-base font-medium text-zinc-200">{title}</h2>
-      {children && <div className="mt-2 max-w-md text-sm text-muted">{children}</div>}
+    <header className="mb-9 flex flex-wrap items-end justify-between gap-4 border-b border-hairline pb-5">
+      <div>
+        <h1 className="font-serif text-display font-semibold text-ink">{title}</h1>
+        {children && <p className="mt-2 max-w-prose text-body text-ink-2">{children}</p>}
+      </div>
+      {aside}
+    </header>
+  );
+}
+
+/* ------------------------------------------------------------------ states */
+
+/**
+ * Typographic rather than illustrated. The supplied empty-state PNGs carry a dark
+ * ground baked into the file, so on the light canvas they render as a black rectangle.
+ * A rule and a heading state the same thing and hold up in both appearances.
+ */
+export function EmptyState({ title, children, action }) {
+  return (
+    <div className="border-y border-hairline px-6 py-20 text-center">
+      <h2 className="font-serif text-title font-semibold text-ink">{title}</h2>
+      {children && (
+        <p className="mx-auto mt-3 max-w-prose text-body text-ink-2">{children}</p>
+      )}
+      {action && <div className="mt-7">{action}</div>}
     </div>
   );
 }
 
 export function Spinner({ label }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-16 text-sm text-muted">
-      <img
-        src="/assets/mark.svg"
-        alt=""
-        width="32"
-        height="32"
-        className="animate-pulse"
-      />
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-col items-center gap-5 py-28 text-caption text-ink-2"
+    >
+      <span aria-hidden="true" className="sweep" />
       {label}
     </div>
   );
 }
 
-export function ErrorNote({ children }) {
+export function ErrorNote({ children, tone = 'error' }) {
   if (!children) return null;
+  const isError = tone === 'error';
   return (
-    <p className="rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-sm text-red-300">
-      {children}
+    <p
+      role={isError ? 'alert' : undefined}
+      className={[
+        'flex items-start gap-2.5 rounded border px-3.5 py-3 text-caption',
+        isError ? 'border-oxblood/40 bg-oxblood/10' : 'border-hairline bg-raised',
+      ].join(' ')}
+    >
+      {/* A word as well as a colour, so the state reads without colour vision. */}
+      <span className={`shrink-0 font-semibold ${isError ? 'text-oxblood' : 'text-ink-2'}`}>
+        {isError ? 'Error' : 'Note'}
+      </span>
+      <span className="text-ink">{children}</span>
     </p>
   );
 }
