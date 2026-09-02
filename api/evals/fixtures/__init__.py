@@ -1,4 +1,4 @@
-"""Golden fixture loaders for the four evaluation suites."""
+"""Golden fixture loaders for the evaluation suites."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from . import (
     suite_b_judge,
     suite_c_retrieval,
     suite_d_injection,
+    suite_e_verifier,
 )
 
 
@@ -38,4 +39,9 @@ def suite_d() -> list[dict]:
     return list(suite_d_injection.CASES)
 
 
-__all__ = ["suite_a", "suite_b", "suite_c", "suite_d"]
+def suite_e() -> list[dict]:
+    """Diagnoses with a known correct verdict, for verifier accuracy."""
+    return list(suite_e_verifier.CASES)
+
+
+__all__ = ["suite_a", "suite_b", "suite_c", "suite_d", "suite_e"]

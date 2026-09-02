@@ -33,6 +33,21 @@ Any failure blocks merge. Both payload classes are covered: instructions hidden 
 comments and strings, which vaulting removes before the model sees them, and instructions
 in identifiers, which vaulting deliberately cannot remove and the verifier has to catch.
 
+### Verifier accuracy — Suite E
+
+23 diagnoses with a known correct verdict, 10 sound and 13 flawed.
+
+| metric | value |
+|---|---|
+| false rejection rate | **10.0%** |
+| false acceptance rate | **7.7%** |
+| accuracy | **91.3%** |
+
+A false rejection forces an escalation to the strong tier, so the first row is a cost as
+well as a quality number. The suite's first run put that rate at 50%, all of it caused by
+one over-strict check; rewriting the check took it to 10%. Details in
+[EVAL_REPORT.md](EVAL_REPORT.md).
+
 ### Diagnosis accuracy — Suite A
 
 124 labelled submissions across the four families.

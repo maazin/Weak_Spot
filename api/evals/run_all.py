@@ -25,6 +25,7 @@ RUNNERS = {
     "B": ("judge calibration", suites.run_suite_b),
     "C": ("retrieval quality", suites.run_suite_c),
     "D": ("prompt injection", suites.run_suite_d),
+    "E": ("verifier accuracy", suites.run_suite_e),
 }
 
 
@@ -42,6 +43,24 @@ def _pct(value: float) -> str:
 
 def render_report(results: dict[str, dict[str, Any]], commit_sha: str) -> str:
     lines = ["## Weakspot evaluation", "", f"commit `{commit_sha[:8]}`", ""]
+
+    if "E" in results:
+        e = results["E"]
+        lines += [
+            "### Suite E — verifier accuracy",
+            "",
+            "| metric | value |",
+            "|---|---|",
+            f"| false rejection rate | {_pct(e['false_rejection_rate'])} "
+            f"of {e['sound_diagnoses']} sound diagnoses |",
+            f"| false acceptance rate | {_pct(e['false_acceptance_rate'])} "
+            f"of {e['flawed_diagnoses']} flawed diagnoses |",
+            f"| accuracy | {_pct(e['accuracy'])} |",
+            "",
+            "A false rejection forces a retry and an escalation to the strong tier, so "
+            "the first row is a cost as well as a quality number.",
+            "",
+        ]
 
     if "D" in results:
         d = results["D"]
@@ -115,7 +134,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Run Weakspot evaluation suites.")
     parser.add_argument("--commit-sha", default="local")
-    parser.add_argument("--suites", default="ABCD", help="subset, e.g. 'AD'")
+    parser.add_argument("--suites", default="ABCDE", help="subset, e.g. 'AD'")
     parser.add_argument("--report", type=Path, help="write the markdown report here")
     parser.add_argument("--json", type=Path, help="write raw metrics here")
     args = parser.parse_args()

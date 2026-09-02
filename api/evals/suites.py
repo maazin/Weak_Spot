@@ -361,3 +361,117 @@ def run_suite_d() -> dict[str, Any]:
         # The gate the spec defines: all valid, none followed.
         "passed": valid == total and not followed,
     }
+
+
+# --------------------------------------------------------------------------- Suite E
+
+
+def _verify(case: dict) -> dict | None:
+    """Run intake, graft the fixture's diagnosis onto the state, then verify.
+
+    Intake has to run for real so the verifier receives properly vaulted code and
+    accurate line numbering. Grafting the diagnosis on afterwards is what isolates the
+    verifier: the diagnoser's own output would vary between runs and the measurement
+    would be of the pair rather than of the checks.
+    """
+    from weakspot.graph.verifier import verifier_node
+
+    state = intake_node(
+        {
+            "submission_id": case["id"],
+            "user_id": "eval",
+            "problem_slug": "eval-fixture",
+            "problem_title": "Eval fixture",
+            "problem_tags": [],
+            "problem_difficulty": "medium",
+            "language": case["language"],
+            "failure_type": case["failure_type"],
+            "code_text": case["code"],
+        }
+    )
+    state.update(
+        {
+            "pattern_id": case["pattern_id"],
+            "confidence": case["confidence"],
+            "explanation": case["explanation"],
+            "evidence_spans": case["evidence_spans"],
+        }
+    )
+    try:
+        return verifier_node(state)
+    except Exception:
+        logger.exception("verifier failed for eval case %s", case["id"])
+        _FAILURES[case["id"]] = ("VerifierError", "see log")
+        return None
+
+
+def run_suite_e() -> dict[str, Any]:
+    """Verifier accuracy. Nothing else exercises the checks that gate a diagnosis."""
+    cases = fixtures.suite_e()
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        outcomes = list(pool.map(_verify, cases))
+
+    false_rejections: list[dict[str, Any]] = []
+    false_acceptances: list[dict[str, Any]] = []
+    wrong_reason: list[dict[str, Any]] = []
+    should_pass = should_reject = 0
+    correct_pass = correct_reject = 0
+    errors = 0
+
+    for case, result in zip(cases, outcomes, strict=True):
+        if result is None:
+            errors += 1
+            continue
+        passed = bool(result.get("verifier_passed"))
+        raised = [f["check"] for f in result.get("verifier_failures", [])]
+
+        if case["should_pass"]:
+            should_pass += 1
+            if passed:
+                correct_pass += 1
+            else:
+                false_rejections.append(
+                    {"id": case["id"], "raised": raised, "note": case.get("note", "")}
+                )
+        else:
+            should_reject += 1
+            if not passed:
+                correct_reject += 1
+                # Catching the case for the wrong reason still lets it through the gate,
+                # but it means the individual check is not doing what it claims.
+                if case["expected_check"] and case["expected_check"] not in raised:
+                    wrong_reason.append(
+                        {
+                            "id": case["id"],
+                            "expected": case["expected_check"],
+                            "raised": raised,
+                        }
+                    )
+            else:
+                false_acceptances.append(
+                    {
+                        "id": case["id"],
+                        "expected": case["expected_check"],
+                        "note": case.get("note", ""),
+                    }
+                )
+
+    scored = should_pass + should_reject
+    return {
+        "cases": len(cases),
+        "scored": scored,
+        "errors": errors,
+        "error_breakdown": _failure_summary([c["id"] for c in cases]),
+        "sound_diagnoses": should_pass,
+        "flawed_diagnoses": should_reject,
+        # The headline pair. Over-rejection costs an escalation every time; under
+        # rejection puts a wrong diagnosis in front of someone.
+        "false_rejection_rate": round(1 - correct_pass / should_pass, 4) if should_pass else 0.0,
+        "false_acceptance_rate": (
+            round(1 - correct_reject / should_reject, 4) if should_reject else 0.0
+        ),
+        "accuracy": round((correct_pass + correct_reject) / scored, 4) if scored else 0.0,
+        "false_rejections": false_rejections,
+        "false_acceptances": false_acceptances,
+        "caught_for_the_wrong_reason": wrong_reason,
+    }

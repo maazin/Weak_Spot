@@ -29,6 +29,55 @@ infrastructure failure, not a security one; it is fixed and the gate is green on
 
 ---
 
+## Suite E — verifier accuracy
+
+23 diagnoses with a known correct verdict: 10 that a careful reader would accept, and 13
+carrying a specific flaw, each labelled with the check that ought to catch it.
+
+| metric | value |
+|---|---|
+| false rejection rate | **10.0%** of 10 sound diagnoses |
+| false acceptance rate | **7.7%** of 13 flawed diagnoses |
+| accuracy | **91.3%** |
+
+The two directions are not symmetric. A false rejection forces a retry and an escalation
+to the strong tier, so it is a bill and a latency spike as much as a quality problem. A
+false acceptance puts a wrong diagnosis in front of someone who trusts it.
+
+### What this suite found on its first run
+
+Nothing exercised the verifier until this suite existed, and the first run put the false
+rejection rate at **50%**. Half of all sound diagnoses were being rejected, every one of
+them escalating to Opus 5 for no reason. Four of the five came from
+`evidence_matches_pattern`, the check added to catch mislabelled diagnoses.
+
+The wording was the cause. It told the model to judge the taxonomy's `signals` against
+the cited lines, which reads as a checklist the span has to satisfy in full. A correct
+memoization diagnosis citing `return fib(n - 1) + fib(n - 2)` was rejected because that
+line does not literally demonstrate "called with the same arguments on multiple
+branches". The check now asks whether the label names a mechanism the submission does
+not contain, states that signals are a guide rather than a checklist, and says to default
+to passing. Rewriting it took the rate from 50% to 10% with no loss on the other side.
+
+Check 3 contributed one rejection by failing a two-line snippet that the mechanical cap
+had already allowed, so its wording now says explicitly that short fragments are fine.
+
+### What remains
+
+One sound diagnosis is still rejected. The verifier asserted that `lo, hi = 0, len(nums)`
+paired with `while lo <= hi` is correctly bounded, which is wrong: the midpoint can reach
+`len(nums)` and index past the end. The verifier makes substantive reasoning errors on
+subtle implementation bugs, and no amount of prompt wording fixes that.
+
+One flawed diagnosis is still accepted. Evidence citing a function signature, which shows
+nothing about the overlapping recursion being claimed, passes `evidence_grounded`. That
+check is lenient about whether a span actually supports the claim made for it.
+
+Results vary between runs on a 23-case set, and one case flipped between two runs during
+this work. Treat single-point differences here as noise.
+
+---
+
 ## Suite A — diagnosis accuracy
 
 124 labelled submissions across the four families.
