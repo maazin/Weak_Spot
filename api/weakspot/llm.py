@@ -47,6 +47,12 @@ CACHE_READ_MULTIPLIER = 0.10
 
 # See _is_transient_bad_request. Three attempts covers a 1-in-10 failure rate with
 # room to spare, without masking a genuinely malformed request for long.
+# The SDK default is ten minutes. A diagnosis takes a few seconds, so a call still
+# running after ninety has stalled, and waiting the full default ties up the request
+# thread long enough to look like a hung server. Observed in a latency run: one
+# submission sat for over ten minutes against the default.
+REQUEST_TIMEOUT_SECONDS = 90.0
+
 TRANSIENT_400_RETRIES = 3
 TRANSIENT_400_BACKOFF_SECONDS = 0.5
 
@@ -85,7 +91,10 @@ class _Client:
             settings = get_settings()
             if not settings.anthropic_api_key:
                 raise ModelTierError("ANTHROPIC_API_KEY is not set; the diagnosis graph cannot run")
-            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._client = anthropic.Anthropic(
+                api_key=settings.anthropic_api_key,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
         return self._client
 
 
@@ -264,9 +273,32 @@ def call_structured(
     )
 
 
+def normalize_model(model: str) -> str:
+    """Map a resolved dated id back to the alias the settings are written in.
+
+    Requests go out with an alias such as `claude-haiku-4-5`, and the response carries
+    the dated id it resolved to, `claude-haiku-4-5-20251001`. That id is what gets
+    stored on the graph state, so any later comparison against a configured tier has to
+    resolve it first. Skipping this is how escalation silently became a no-op and how
+    every diagnosis was priced at zero.
+    """
+    settings = get_settings()
+    aliases = {
+        settings.model_tier_cheap,
+        settings.model_tier_strong,
+        settings.model_tier_verifier,
+        settings.model_tier_judge,
+    }
+    # Longest first, so a shorter alias cannot shadow a more specific one.
+    for alias in sorted(aliases, key=len, reverse=True):
+        if alias and model.startswith(alias):
+            return alias
+    return model
+
+
 def escalate(model: str) -> str:
     """The one permitted escalation, per spec: cheap -> strong, once."""
     settings = get_settings()
-    if model == settings.model_tier_cheap:
+    if normalize_model(model) == settings.model_tier_cheap:
         return settings.model_tier_strong
     return model

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..config import get_settings
-from ..llm import call_structured
+from ..llm import call_structured, normalize_model
 from ..prompts import diagnoser as prompt
 from ..taxonomy import get_taxonomy
 from .state import GraphState
@@ -44,7 +44,9 @@ def diagnoser_node(state: GraphState) -> GraphState:
         tool_description=prompt.TOOL_DESCRIPTION,
         input_schema=prompt.build_tool_schema(taxonomy),
         max_tokens=8192,
-        effort="high" if tier == settings.model_tier_strong else None,
+        # `tier` arrives from the state as a resolved dated id, so it has to be
+        # normalized before it can be compared with a configured alias.
+        effort=("high" if normalize_model(tier) == settings.model_tier_strong else None),
     )
 
     payload = result.tool_input

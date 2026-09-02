@@ -18,6 +18,7 @@ from weakspot.llm import (
     _is_transient_bad_request,
     compute_cost_usd,
     escalate,
+    normalize_model,
 )
 from weakspot.prompts import diagnoser as diagnoser_prompt
 from weakspot.taxonomy import load_taxonomy
@@ -266,3 +267,45 @@ def test_persistent_transient_400_eventually_gives_up():
     with pytest.raises(anthropic.BadRequestError):
         _create_with_transient_retry(Client(), {"model": "m"})
     assert calls["n"] == TRANSIENT_400_RETRIES
+
+
+# ------------------------------------------- alias vs dated id (regression)
+
+
+def test_escalation_works_on_the_dated_id_the_state_actually_carries():
+    """Regression: escalation was a silent no-op in production.
+
+    The graph stores `response.model`, which is the resolved dated id, then compared it
+    against the configured alias with `==`. That never matched, so every escalation
+    re-ran the cheap tier. The logs read `claude-haiku-4-5-20251001 ->
+    claude-haiku-4-5-20251001`, which is what gave it away.
+    """
+    assert escalate("claude-haiku-4-5-20251001") == "claude-opus-5"
+    assert escalate("claude-haiku-4-5") == "claude-opus-5"
+
+
+def test_escalation_from_the_strong_tier_is_terminal_either_way():
+    """Already-strong stays strong, whether it arrives as an alias or a dated id.
+
+    The dated form is returned unchanged rather than normalized, which keeps the exact
+    model that produced the diagnosis on the record.
+    """
+    assert escalate("claude-opus-5") == "claude-opus-5"
+    assert normalize_model(escalate("claude-opus-5-20260101")) == "claude-opus-5"
+
+
+def test_normalize_model_resolves_dated_ids_to_their_alias():
+    assert normalize_model("claude-haiku-4-5-20251001") == "claude-haiku-4-5"
+    assert normalize_model("claude-opus-5-20260101") == "claude-opus-5"
+    assert normalize_model("claude-haiku-4-5") == "claude-haiku-4-5"
+
+
+def test_normalize_model_leaves_an_unknown_id_alone():
+    assert normalize_model("some-future-model-20301231") == "some-future-model-20301231"
+
+
+def test_a_request_timeout_is_configured():
+    """The SDK default is ten minutes, long enough that a stall looks like a hang."""
+    from weakspot.llm import REQUEST_TIMEOUT_SECONDS
+
+    assert 0 < REQUEST_TIMEOUT_SECONDS <= 120
