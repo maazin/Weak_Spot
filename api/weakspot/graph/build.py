@@ -77,9 +77,26 @@ def _retriever_with_prewarm(state: GraphState, db: Session) -> dict[str, Any]:
     return out
 
 
+# Escalating to the strong tier adds roughly fifteen seconds and forty times the cost.
+# That is worth paying on a normal request and not worth paying on one that has already
+# been slow, because the person is still waiting and the retry may stall too. Past this
+# point the diagnosis is returned unverified rather than escalated.
+ESCALATION_BUDGET_MS = 45_000
+
+
 def _verifier_route(state: GraphState) -> str:
     settings = get_settings()
     if state.get("verifier_passed"):
+        return "retriever"
+    spent = state.get("latency_ms", 0)
+    if spent > ESCALATION_BUDGET_MS:
+        logger.warning(
+            "skipping escalation: already spent %dms, over the %dms budget; "
+            "returning unverified diagnosis submission=%s",
+            spent,
+            ESCALATION_BUDGET_MS,
+            state.get("submission_id"),
+        )
         return "retriever"
     if state.get("retry_count", 0) >= settings.max_retries:
         logger.warning(

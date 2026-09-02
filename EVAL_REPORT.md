@@ -73,8 +73,18 @@ One flawed diagnosis is still accepted. Evidence citing a function signature, wh
 nothing about the overlapping recursion being claimed, passes `evidence_grounded`. That
 check is lenient about whether a span actually supports the claim made for it.
 
-Results vary between runs on a 23-case set, and one case flipped between two runs during
+Results vary between runs on a small set, and one case flipped between two runs during
 this work. Treat single-point differences here as noise.
+
+### What this suite does not measure
+
+Every case grafts a diagnosis written by hand onto real intake output, which isolates the
+checks from the diagnoser's run-to-run variation. That is the point, and it is also the
+limit: these diagnoses are tighter than what the diagnoser actually produces. Live
+traffic escalated on 2 of 8 submissions, well above the 10% false rejection measured
+here, so the two numbers are not interchangeable. This suite scores the checks. The
+escalation rate in the latency section scores the diagnoser and verifier together, and
+that is the one that predicts the bill.
 
 ---
 
@@ -176,13 +186,58 @@ should be re-derived once they exist.
 
 ---
 
-## Not measured
+## Latency and cost, measured
 
-**Latency percentiles.** `weakspot_latency_quantile_ms` is exported from `/metrics` and
-recorded per diagnosis, but it is populated by real traffic and the system has not served
-any. The README's p95 target of 6 seconds is therefore an unvalidated goal. One
-end-to-end run measured 26.8 s, though that case included a verifier rejection and an
-escalation to Opus 5, so it is a worst case rather than a typical one.
+Eight submissions through the running API, uncached, after the escalation path was
+repaired. Small sample, and the escalation rate is the number least settled by it.
+
+| path | n | p50 | mean cost |
+|---|---|---|---|
+| direct | 6 | **5.6 s** | **$0.0084** |
+| escalated | 2 | **21.4 s** | **$0.0788** |
+
+Escalation fired on 2 of 8. At that rate the blended figure is about **$0.026 per
+diagnosis**, which is roughly eight times the $0.00343 Suite A reports.
+
+### Why Suite A's cost figure is lower
+
+Two reasons, both worth stating plainly rather than reconciling quietly.
+
+Suite A runs intake and the diagnoser only. It never calls the verifier, so its per-case
+cost is missing a call that every real diagnosis makes. The direct path above is $0.0084
+against Suite A's $0.00343 for that reason alone.
+
+More seriously, Suite A was measured while **escalation was silently broken**. The graph
+stored the resolved dated model id and compared it against the configured alias, so
+`escalate()` returned the cheap tier unchanged and every escalated case re-ran Haiku at
+Haiku prices. Fixing that did not make the system more expensive. It revealed what the
+design in the spec actually costs, and the escalated column above is the first honest
+measurement of it.
+
+### The p95 target
+
+The direct path at 5.6 s sits inside the 6-second target. The escalated path at 21.4 s
+does not, and no wording changes that: the second diagnosis and the second verification
+are simply more work, and `effort="high"` on the strong tier is slow by design.
+
+Anyone quoting a single p95 for this system is averaging two different things. Report the
+two paths separately and report the escalation rate beside them.
+
+### A 617-second diagnosis
+
+One submission in the batch recorded 617 seconds. The retry layers multiply and nothing
+capped the total: the SDK's default of two retries gives three attempts, the transient-400
+handling adds three more, and a diagnosis makes up to four calls. That is fifty-four
+minutes of worst case.
+
+The SDK is now capped at one retry with a 60-second timeout, so a single call is bounded
+at about two minutes, and the graph skips escalation once a diagnosis has already spent
+45 seconds. Escalation is worth roughly fifteen extra seconds on a normal request and
+worth nothing on one that is already slow.
+
+## Still not measured
 
 **Cache hit rate in steady state.** `cache_hit` is recorded per call, but a meaningful
-rate needs sustained traffic against a warm prefix.
+rate needs sustained traffic against a warm prefix. Repeat submissions of identical code
+were observed served from the `code_hash` cache in about 20 ms against roughly 6 s
+uncached, which is the cache working, not a hit rate.

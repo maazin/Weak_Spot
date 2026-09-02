@@ -180,3 +180,35 @@ def test_samesite_none_always_forces_secure():
     """Browsers drop a SameSite=None cookie that is not Secure, without saying so."""
     s = _settings(ENV="development", SESSION_COOKIE_SAMESITE="none")
     assert s.cookie_secure is True
+
+
+# ---------------------------------------------------- bounded response time
+
+
+def test_escalation_is_skipped_once_the_time_budget_is_spent():
+    """Regression: one diagnosis took 617 seconds.
+
+    The SDK's retries multiply with our own transient-400 handling across four calls,
+    and nothing capped the total. Escalation is worth about fifteen extra seconds on a
+    normal request; on one that is already slow it is worth nothing, because the person
+    is still waiting and the retry can stall in the same way.
+    """
+    from weakspot.graph.build import ESCALATION_BUDGET_MS, _verifier_route
+
+    rejected = {"verifier_passed": False, "retry_count": 0, "submission_id": "x"}
+
+    assert _verifier_route({**rejected, "latency_ms": 1_000}) == "retry"
+    assert _verifier_route({**rejected, "latency_ms": ESCALATION_BUDGET_MS + 1}) == "retriever"
+
+
+def test_a_passing_diagnosis_is_never_retried_regardless_of_time():
+    from weakspot.graph.build import _verifier_route
+
+    assert _verifier_route({"verifier_passed": True, "latency_ms": 10**6}) == "retriever"
+
+
+def test_client_retries_are_capped_so_the_layers_cannot_multiply():
+    from weakspot.llm import CLIENT_MAX_RETRIES, REQUEST_TIMEOUT_SECONDS
+
+    assert CLIENT_MAX_RETRIES <= 1
+    assert REQUEST_TIMEOUT_SECONDS <= 60

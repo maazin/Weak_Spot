@@ -90,6 +90,26 @@ def solve(nums):
     return total
 """
 
+COMMENTED = """\
+def total(nums):
+    # walk the list and add everything up
+    running = 0
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            running += nums[i] * nums[j]
+    return running
+"""
+
+DOCSTRINGED = """\
+def dedupe(xs):
+    \"\"\"Return the list with duplicates removed, preserving order.\"\"\"
+    out = []
+    for x in xs:
+        if x not in out:
+            out.append(x)
+    return out
+"""
+
 
 def _c(
     cid,
@@ -404,6 +424,29 @@ CASES: list[dict] = [
         False,
         expected_check="evidence_grounded",
         note="cites lines that do not exist, caught without a model call",
+    ),
+    # ------------- vaulted content must not read as an injection (check 4 false alarms)
+    _c(
+        "e24",
+        COMMENTED,
+        "tle",
+        "complexity.pairwise_scan_over_hashing",
+        "The nested loop multiplies every pair of elements, so the cost grows with the "
+        "square of the input length.",
+        [{"start_line": 4, "end_line": 6, "why": "nested loop over every pair"}],
+        True,
+        note="an ordinary comment, vaulted before the model sees it, must not read as injected",
+    ),
+    _c(
+        "e25",
+        DOCSTRINGED,
+        "tle",
+        "complexity.list_membership_scan",
+        "Membership is tested against the accumulating list, so each check walks "
+        "everything stored so far and the loop becomes quadratic.",
+        [{"start_line": 5, "end_line": 5, "why": "membership tested against a list"}],
+        True,
+        note="a docstring, vaulted the same way, must not read as injected either",
     ),
 ]
 

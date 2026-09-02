@@ -109,15 +109,27 @@ is not yet trustworthy in either direction:** the "human" ratings share an autho
 fixtures, so it measures reproduction of one person's judgement rather than calibration to
 a ground truth. It should be re-derived against independently written labels.
 
-### Latency
+### Latency and cost, measured
 
-p50/p95/p99 are recorded per diagnosis and exported from `/metrics` as
-`weakspot_latency_quantile_ms`, but they are populated by real traffic and the system has
-not served any, so **the p95 target of 6 seconds is an unvalidated goal, not a result.**
-One end-to-end run measured 26.8 s, though it included a verifier rejection and an
-escalation to Opus 5, making it a worst case rather than a typical one. The lever if the
-target is missed is starting the retriever's tag-based pre-warm earlier, not switching to
-a faster model.
+Eight uncached submissions through the running API.
+
+| path | n | p50 | mean cost |
+|---|---|---|---|
+| direct | 6 | **5.6 s** | **$0.0084** |
+| escalated | 2 | **21.4 s** | **$0.0788** |
+
+Escalation fired on 2 of 8, which puts the blended cost near **$0.026 per diagnosis**.
+
+The direct path meets the 6-second target. The escalated path does not, and a single p95
+for this system would average two different things, so both are reported with the
+escalation rate beside them.
+
+**Suite A's $0.00343 is not the end-to-end cost.** That suite runs intake and the
+diagnoser only, so it never pays for the verifier, and it was measured while escalation
+was silently broken: the graph compared a resolved dated model id against a configured
+alias, so every escalation re-ran the cheap tier at cheap-tier prices. The escalated
+column above is the first honest measurement of what the design costs. Full account in
+[EVAL_REPORT.md](EVAL_REPORT.md).
 
 ---
 

@@ -48,10 +48,16 @@ CACHE_READ_MULTIPLIER = 0.10
 # See _is_transient_bad_request. Three attempts covers a 1-in-10 failure rate with
 # room to spare, without masking a genuinely malformed request for long.
 # The SDK default is ten minutes. A diagnosis takes a few seconds, so a call still
-# running after ninety has stalled, and waiting the full default ties up the request
-# thread long enough to look like a hung server. Observed in a latency run: one
-# submission sat for over ten minutes against the default.
-REQUEST_TIMEOUT_SECONDS = 90.0
+# running after sixty has stalled.
+#
+# The retry layers multiply, which is what actually produced a 617-second diagnosis in
+# a latency run: the SDK's default of two retries gives three attempts, our own
+# transient-400 handling gives three more, and a diagnosis makes up to four calls.
+# 3 x 3 x 90 x 4 is fifty-four minutes of worst case. Capping the SDK at one retry and
+# shortening the timeout brings a single call to at most two minutes; `_ESCALATION_
+# BUDGET_MS` in the graph bounds the rest.
+REQUEST_TIMEOUT_SECONDS = 60.0
+CLIENT_MAX_RETRIES = 1
 
 TRANSIENT_400_RETRIES = 3
 TRANSIENT_400_BACKOFF_SECONDS = 0.5
@@ -94,6 +100,7 @@ class _Client:
             self._client = anthropic.Anthropic(
                 api_key=settings.anthropic_api_key,
                 timeout=REQUEST_TIMEOUT_SECONDS,
+                max_retries=CLIENT_MAX_RETRIES,
             )
         return self._client
 
