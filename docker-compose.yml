@@ -58,6 +58,8 @@ services:
   web:
     build:
       context: ./web
+      # Hot reload locally. The image defaults to the production target otherwise.
+      target: dev
     environment:
       VITE_API_BASE: http://localhost:8000
     ports:

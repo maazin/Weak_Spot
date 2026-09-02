@@ -36,8 +36,8 @@ def issue_session(response: Response, user_id: str) -> None:
         token,
         max_age=settings.session_max_age,
         httponly=True,
-        samesite="lax",
-        secure=settings.is_production,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
         path="/",
     )
 

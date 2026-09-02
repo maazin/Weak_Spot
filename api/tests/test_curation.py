@@ -12,15 +12,21 @@ from pathlib import Path
 import pytest
 import yaml
 
-from weakspot.db import SessionLocal
-from weakspot.ingest.seed import (
+from weakspot.db import SessionLocal, ping
+
+# These assert against seeded rows, so they need a database. Declared here rather than
+# relying on a global skip, so that a run without Docker skips exactly the tests that
+# need one and still executes everything else.
+pytestmark = pytest.mark.skipif(not ping(), reason="no database available")
+
+from weakspot.ingest.seed import (  # noqa: E402
     OVERRIDES_PATH,
     apply_overrides,
     export_for_review,
     load_overrides,
 )
-from weakspot.models import PatternProblem, Problem
-from weakspot.taxonomy import load_taxonomy
+from weakspot.models import PatternProblem, Problem  # noqa: E402
+from weakspot.taxonomy import load_taxonomy  # noqa: E402
 
 
 @pytest.fixture(scope="module")

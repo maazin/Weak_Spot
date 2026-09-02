@@ -18,6 +18,10 @@ primary_region = "iad"
   # Refused at startup when ENV is production — stated here so the value is explicit
   # rather than merely absent.
   DEV_AUTH_BYPASS = "false"
+  # The web app is served from a different host than the API, so the session cookie
+  # has to be cross-site or the frontend gets 401 on every authenticated call. Set
+  # this to "lax" only if both end up on one registrable domain.
+  SESSION_COOKIE_SAMESITE = "none"
   TAXONOMY_PATH = "/taxonomy/patterns.yaml"
   LANGFUSE_HOST = "https://cloud.langfuse.com"
 

@@ -10,6 +10,7 @@ the current strategy would never have produced.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 
 import pytest
 
@@ -22,9 +23,26 @@ from weakspot.db import ping  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not ping(), reason="no database available")
 
-from weakspot.db import session_scope  # noqa: E402
+from weakspot.db import SessionLocal  # noqa: E402
 from weakspot.ingest.seed import link_by_similarity  # noqa: E402
 from weakspot.models import Pattern, PatternProblem, Problem  # noqa: E402
+
+
+@contextmanager
+def _scratch_session():
+    """A session whose writes are always rolled back.
+
+    These tests call the linker directly, and the linker regenerates every pair
+    similarity endorses — including pairs recorded as rejected, which only
+    `apply_overrides` removes afterwards. Committing that would resurrect rejected
+    links and fail test_curation on the next run against the same database. It did.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.rollback()
+        db.close()
 
 
 def _has_embeddings(db) -> bool:
@@ -35,7 +53,7 @@ def _has_embeddings(db) -> bool:
 
 
 def test_similarity_linking_removes_links_it_no_longer_endorses():
-    with session_scope() as db:
+    with _scratch_session() as db:
         if not _has_embeddings(db):
             pytest.skip("no embeddings seeded; run `make seed EMBED=1` first")
 
@@ -68,7 +86,7 @@ def test_similarity_linking_removes_links_it_no_longer_endorses():
 
 def test_curated_links_survive_relinking():
     """The whole point of the curated flag: hand decisions outlive a re-seed."""
-    with session_scope() as db:
+    with _scratch_session() as db:
         if not _has_embeddings(db):
             pytest.skip("no embeddings seeded; run `make seed EMBED=1` first")
 

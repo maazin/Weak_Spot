@@ -1,4 +1,4 @@
-"""`verifier` — cheap-tier LLM node running the four checks from spec section 5.
+"""`verifier` — cheap-tier LLM node running the five checks (four from spec section 5).
 
 Two of the four have a mechanical component that is cheaper and more reliable to run in
 Python than to ask a model about: whether a cited line range exists at all, and whether
@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 FENCE_RE = re.compile(r"```[a-zA-Z0-9+]*\n(.*?)```", re.DOTALL)
 MAX_CODE_BLOCK_LINES = 3
+
+# Below this, the diagnoser is telling us it does not know. A real run returned a
+# confidence of 0.15 with a pattern label that did not match its own explanation, and
+# every check passed. Treating that as a rejection routes it through the existing
+# retry-then-escalate path instead of serving a guess as though it were a finding.
+#
+# The floor is a judgement call, not a measured optimum: set low enough that only
+# genuinely uncertain diagnoses trip it, since each one that does costs an escalation.
+MIN_CONFIDENCE = 0.25
 
 # Families that cannot coexist with a reported failure type without contradiction.
 CONTRADICTIONS: dict[str, set[str]] = {
@@ -53,6 +62,18 @@ def _mechanical_checks(state: GraphState) -> list[VerifierFailure]:
                     ),
                 }
             )
+
+    confidence = float(state.get("confidence", 0.0))
+    if confidence < MIN_CONFIDENCE:
+        failures.append(
+            {
+                "check": "confidence_floor",
+                "detail": (
+                    f"confidence {confidence:.2f} is below the {MIN_CONFIDENCE} floor; "
+                    "the diagnoser is not sure enough for this to be reported as a finding"
+                ),
+            }
+        )
 
     explanation = state.get("explanation", "")
     for block in FENCE_RE.findall(explanation):
@@ -112,6 +133,7 @@ def verifier_node(state: GraphState) -> GraphState:
             pattern_id=state["pattern_id"],
             pattern_family=family,
             pattern_name=entry.name if entry else "",
+            pattern_signals=list(entry.signals) if entry else [],
             confidence=state.get("confidence", 0.0),
             explanation=state.get("explanation", ""),
             evidence_spans=state.get("evidence_spans", []),

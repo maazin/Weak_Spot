@@ -19,8 +19,19 @@ os.environ.setdefault("ENV", "test")
 
 @pytest.fixture(scope="session", autouse=True)
 def _migrate() -> None:
+    """Bring the schema to head when a database is reachable.
+
+    This deliberately does not skip when the database is down. It used to, and because
+    it is autouse and session-scoped that skipped *every* test — including the taxonomy,
+    scoring, cost, prompt and verifier tests, none of which touch Postgres. Running the
+    suite without Docker produced an all-skipped run that looks green and asserts
+    nothing.
+
+    Modules that genuinely need the database carry their own
+    `pytestmark = pytest.mark.skipif(not ping(), ...)`, so they still skip cleanly on
+    their own terms.
+    """
     from weakspot.db import ping, upgrade_to_head
 
-    if not ping():
-        pytest.skip("database unreachable", allow_module_level=True)
-    upgrade_to_head()
+    if ping():
+        upgrade_to_head()

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { EmptyState, ErrorNote, Spinner } from '../components/Chrome';
+import { EmptyState, ErrorNote, Page, PageHeader, Spinner } from '../components/Chrome';
 
 const FAMILY_LABEL = {
   pattern_selection: 'Pattern selection',
@@ -9,17 +9,21 @@ const FAMILY_LABEL = {
   comprehension: 'Comprehension',
 };
 
-/** Trend arrows are the only chart in the product, by design. */
+/**
+ * Direction is carried by a word as well as a colour, so the reading survives without
+ * colour vision. This remains the only chart in the product, by design.
+ */
 function Trend({ direction }) {
-  const config = {
-    up: { glyph: '▲', className: 'text-red-400', title: 'more often lately' },
-    down: { glyph: '▼', className: 'text-emerald-400', title: 'less often lately' },
-    flat: { glyph: '—', className: 'text-muted', title: 'unchanged' },
-  }[direction] ?? { glyph: '—', className: 'text-muted', title: '' };
+  const config =
+    {
+      up: { label: 'Rising', className: 'text-oxblood' },
+      down: { label: 'Easing', className: 'text-forest' },
+      flat: { label: 'Steady', className: 'text-ink-2' },
+    }[direction] ?? { label: 'Steady', className: 'text-ink-2' };
 
   return (
-    <span className={`text-xs ${config.className}`} title={config.title}>
-      {config.glyph}
+    <span className={`text-micro font-semibold uppercase tracking-[0.06em] ${config.className}`}>
+      {config.label}
     </span>
   );
 }
@@ -35,71 +39,68 @@ export default function WeakPatterns() {
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) {
+  if (error)
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <Page>
         <ErrorNote>{error}</ErrorNote>
-      </div>
+      </Page>
     );
-  }
-  if (!items) return <Spinner label="Loading your profile…" />;
+  if (!items) return <Spinner label="Loading your profile" />;
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <EmptyState image="/assets/empty-done.png" alt="" title="No patterns yet">
-          Once you have diagnosed a few failed attempts, the failure modes you keep
-          repeating show up here, ranked.
+      <Page>
+        <EmptyState title="No patterns yet">
+          Once a few failed attempts have been diagnosed, the failure modes that keep
+          recurring appear here, ranked by frequency.
         </EmptyState>
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-4 py-8">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight text-zinc-100">
-          Weak patterns
-        </h1>
-        <p className="text-xs text-muted">
-          Ranked by how often each has been diagnosed. The arrow compares the last 30
-          days against the 30 before.
-        </p>
-      </div>
+    <Page>
+      <PageHeader title="Weak patterns">
+        Ranked by how often each has been diagnosed. The trend compares the last 30 days
+        against the 30 before them.
+      </PageHeader>
 
-      <ul className="space-y-2">
+      <ol className="divide-y divide-hairline border-y border-hairline">
         {items.map((item) => (
-          <li key={item.pattern.id} className="card">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 w-8 shrink-0 text-right font-mono text-sm text-accent">
-                {item.occurrences}×
+          <li key={item.pattern.id} className="grid gap-4 py-7 sm:grid-cols-[4.5rem,1fr] sm:gap-7">
+            <div className="flex items-baseline gap-2 sm:block">
+              <span className="font-serif text-title font-semibold text-ink tabular-nums">
+                {item.occurrences}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-medium text-zinc-100">
-                    {item.pattern.name}
-                  </h2>
-                  <Trend direction={item.trend} />
-                </div>
-                <p className="mt-1 text-xs text-muted">
-                  {FAMILY_LABEL[item.pattern.family] ?? item.pattern.family} · last seen{' '}
-                  {new Date(item.last_seen_at).toLocaleDateString()}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-                  {item.pattern.correct_approach}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {item.pattern.practice_tags.map((tag) => (
-                    <span key={tag} className="tag">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+              <span className="text-micro text-ink-2 sm:mt-1 sm:block">
+                time{item.occurrences === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="text-lead font-medium text-ink">{item.pattern.name}</h2>
+                <Trend direction={item.trend} />
+              </div>
+              <p className="mt-1.5 text-micro text-ink-2">
+                {FAMILY_LABEL[item.pattern.family] ?? item.pattern.family}
+                <span className="px-2 text-ink-3">/</span>
+                last seen {new Date(item.last_seen_at).toLocaleDateString()}
+              </p>
+              <p className="mt-3 max-w-prose text-body text-ink-2">
+                {item.pattern.correct_approach}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {item.pattern.practice_tags.map((tag) => (
+                  <span key={tag} className="chip">
+                    {tag}
+                  </span>
+                ))}
               </div>
             </div>
           </li>
         ))}
-      </ul>
-    </div>
+      </ol>
+    </Page>
   );
 }

@@ -25,8 +25,16 @@ os.environ.setdefault("ENV", "test")
 from fastapi.testclient import TestClient  # noqa: E402
 
 from weakspot.db import ping  # noqa: E402
+from weakspot.ratelimit import ping as redis_ping  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not ping(), reason="no database available")
+# Both are required: these exercise the API end to end, and the quota layer talks to
+# Redis on every submission. Guarding on the database alone produced 25 raw
+# ConnectionRefusedError tracebacks when only Redis was down — noise that reads like a
+# code regression instead of a missing service.
+pytestmark = pytest.mark.skipif(
+    not ping() or not redis_ping(),
+    reason="needs both postgres and redis (make up)",
+)
 
 from weakspot.graph import build as graph_build  # noqa: E402
 from weakspot.main import app  # noqa: E402

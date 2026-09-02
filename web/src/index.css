@@ -2,42 +2,160 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Light is the base definition. Dark redefines only the tokens, so no component needs
+ * to know which appearance it is running in.
+ *
+ * Every foreground token clears 4.5:1 against its intended background in both
+ * appearances. The previous palette carried captions and form labels at 2.29:1.
+ * Neither canvas is pure white or pure black; both keep a warm cast.
+ */
 :root {
+  --canvas: 244 241 234;
+  --surface: 250 248 243;
+  --raised: 238 234 225;
+  --hairline: 221 215 202;
+  --ink: 28 26 22;
+  --ink-2: 78 74 66;
+  --ink-3: 107 102 92;
+  --brass: 110 85 24;
+  --on-brass: 250 248 243;
+  --forest: 47 93 63;
+  --oxblood: 122 46 42;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --canvas: 13 12 11;
+    --surface: 20 19 17;
+    --raised: 27 26 23;
+    --hairline: 42 39 35;
+    --ink: 237 234 227;
+    --ink-2: 168 162 150;
+    --ink-3: 138 132 119;
+    --brass: 201 169 97;
+    --on-brass: 20 18 12;
+    --forest: 143 179 152;
+    --oxblood: 205 132 116;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --canvas: 13 12 11;
+  --surface: 20 19 17;
+  --raised: 27 26 23;
+  --hairline: 42 39 35;
+  --ink: 237 234 227;
+  --ink-2: 168 162 150;
+  --ink-3: 138 132 119;
+  --brass: 201 169 97;
+  --on-brass: 20 18 12;
+  --forest: 143 179 152;
+  --oxblood: 205 132 116;
   color-scheme: dark;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  @apply bg-bg text-zinc-200 antialiased;
+  @apply bg-canvas text-ink antialiased;
+  font-synthesis-weight: none;
+}
+
+/* A visible focus ring is the whole point of focus. The previous build set
+   outline-none on inputs and signalled focus with a border tint alone. */
+:focus-visible {
+  @apply outline-none ring-2 ring-brass ring-offset-2 ring-offset-canvas;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer components {
-  .card {
-    @apply rounded-lg border border-edge bg-surface p-5;
+  .surface {
+    @apply rounded border border-hairline bg-surface;
   }
 
+  .card {
+    @apply surface p-5 sm:p-6;
+  }
+
+  /* 44px minimum on every control, which is the mobile touch target floor. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm
-      font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 select-none items-center justify-center gap-2 rounded
+      px-4 text-caption font-medium transition-colors duration-150
+      disabled:pointer-events-none disabled:opacity-45;
   }
 
   .btn-primary {
-    @apply btn bg-accent text-bg hover:bg-amber-400;
+    @apply btn bg-brass text-on-brass hover:bg-brass/90;
   }
 
-  .btn-ghost {
-    @apply btn border border-edge text-zinc-300 hover:border-zinc-500 hover:text-zinc-100;
+  .btn-secondary {
+    @apply btn border border-hairline bg-raised text-ink hover:border-ink-3;
+  }
+
+  .btn-quiet {
+    @apply btn px-3 text-ink-2 hover:bg-raised hover:text-ink;
   }
 
   .field {
-    @apply w-full rounded-md border border-edge bg-bg px-3 py-2 text-sm text-zinc-100
-      outline-none placeholder:text-muted focus:border-accent;
+    @apply block w-full rounded border border-hairline bg-canvas px-3.5 py-2.5 text-body
+      text-ink transition-colors placeholder:text-ink-3 hover:border-ink-3/60
+      focus:border-brass;
+    min-height: 2.75rem;
   }
 
   .label {
-    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted;
+    @apply mb-2 block text-caption font-medium text-ink;
   }
 
-  .tag {
-    @apply rounded border border-edge px-1.5 py-0.5 text-[11px] text-zinc-400;
+  .hint {
+    @apply mt-2 text-micro text-ink-2;
+  }
+
+  .chip {
+    @apply inline-flex items-center rounded-sm border border-hairline bg-raised px-2
+      py-0.5 text-micro font-medium text-ink-2;
+  }
+
+  .link {
+    @apply text-ink underline decoration-hairline decoration-1 underline-offset-[3px]
+      transition-colors hover:decoration-brass;
+  }
+
+  .eyebrow {
+    @apply text-micro font-semibold uppercase tracking-[0.09em] text-ink-2;
+  }
+
+  /* Indeterminate progress as a rule that sweeps, with no rotating disc. */
+  .sweep {
+    @apply relative h-px w-40 overflow-hidden bg-hairline;
+  }
+  .sweep::after {
+    content: '';
+    @apply absolute inset-y-0 left-0 w-1/3 bg-brass;
+    animation: sweep 1.15s ease-in-out infinite;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
   }
 }

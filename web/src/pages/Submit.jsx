@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { EmptyState, ErrorNote, Spinner } from '../components/Chrome';
+import { ErrorNote, Page, PageHeader, Spinner } from '../components/Chrome';
 
 const LANGUAGES = [
   ['python', 'Python'],
@@ -20,6 +20,8 @@ const FAILURES = [
   ['looked_at_solution', 'Looked at the solution'],
 ];
 
+const MAX_LINES = 800;
+
 export default function Submit() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -31,7 +33,8 @@ export default function Submit() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const untouched = !form.problem_slug && !form.code;
+  const lineCount = form.code ? form.code.split('\n').length : 0;
+  const overLimit = lineCount > MAX_LINES;
 
   function update(key) {
     return (event) => setForm((f) => ({ ...f, [key]: event.target.value }));
@@ -47,7 +50,7 @@ export default function Submit() {
     } catch (e) {
       setError(
         e.status === 429
-          ? 'You have used all 10 free diagnoses for today. The limit resets at midnight UTC.'
+          ? 'All 10 free diagnoses for today have been used. The limit resets at midnight UTC.'
           : e.message,
       );
     } finally {
@@ -55,55 +58,68 @@ export default function Submit() {
     }
   }
 
-  if (busy) return <Spinner label="Diagnosing your attempt…" />;
+  if (busy) return <Spinner label="Reading your attempt" />;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      {untouched && (
-        <EmptyState
-          image="/assets/empty-submit.png"
-          alt=""
-          title="Paste a failed attempt"
-        >
-          Weakspot works on attempts that did not pass. Tell it which problem, what your
-          code was, and what happened.
-        </EmptyState>
-      )}
+    <Page>
+      <PageHeader title="Submit an attempt">
+        Weakspot works on attempts that did not pass. Give it the problem, the code you
+        wrote, and what the judge said.
+      </PageHeader>
 
-      <form onSubmit={submit} className="card space-y-5">
+      <form onSubmit={submit} className="space-y-7" noValidate>
         <div>
           <label className="label" htmlFor="slug">
-            Problem slug or URL
+            Problem
           </label>
           <input
             id="slug"
             className="field"
-            placeholder="two-sum, or https://leetcode.com/problems/two-sum/"
+            placeholder="two-sum, or a full problem URL"
             value={form.problem_slug}
             onChange={update('problem_slug')}
+            autoComplete="off"
+            spellCheck="false"
             required
+            aria-describedby="slug-hint"
           />
-        </div>
-
-        <div>
-          <label className="label" htmlFor="code">
-            Your failing code
-          </label>
-          <textarea
-            id="code"
-            className="field min-h-[280px] font-mono text-[13px] leading-relaxed"
-            placeholder="Paste the attempt exactly as you wrote it."
-            value={form.code}
-            onChange={update('code')}
-            required
-          />
-          <p className="mt-1.5 text-xs text-muted">
-            Up to 32KB and 800 lines. Comments and strings are stripped before the model
-            sees your code.
+          <p className="hint" id="slug-hint">
+            A slug or a link. Weakspot stores the title, difficulty, and tags, never the
+            problem statement.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className="flex items-baseline justify-between gap-3">
+            <label className="label" htmlFor="code">
+              Your failing code
+            </label>
+            {lineCount > 0 && (
+              <span
+                className={`text-micro tabular-nums ${overLimit ? 'font-semibold text-oxblood' : 'text-ink-2'}`}
+              >
+                {lineCount} / {MAX_LINES} lines
+              </span>
+            )}
+          </div>
+          <textarea
+            id="code"
+            className="field min-h-[22rem] resize-y font-mono text-[13px] leading-[1.7]"
+            placeholder="Paste the attempt exactly as you wrote it."
+            value={form.code}
+            onChange={update('code')}
+            spellCheck="false"
+            required
+            aria-describedby="code-hint"
+            aria-invalid={overLimit || undefined}
+          />
+          <p className="hint" id="code-hint">
+            Up to 32KB. Comments and string literals are replaced with placeholders
+            before the model reads any of it.
+          </p>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-2">
           <div>
             <label className="label" htmlFor="language">
               Language
@@ -143,10 +159,13 @@ export default function Submit() {
 
         <ErrorNote>{error}</ErrorNote>
 
-        <button type="submit" className="btn-primary w-full" disabled={busy}>
-          Diagnose
-        </button>
+        <div className="flex flex-wrap items-center gap-4 border-t border-hairline pt-6">
+          <button type="submit" className="btn-primary" disabled={busy || overLimit}>
+            Diagnose
+          </button>
+          <span className="text-micro text-ink-2">10 free diagnoses per day.</span>
+        </div>
       </form>
-    </div>
+    </Page>
   );
 }

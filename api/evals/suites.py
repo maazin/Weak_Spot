@@ -64,12 +64,33 @@ def _run_parallel(cases: list[dict]) -> list[tuple[dict, dict | None]]:
     return results
 
 
+_FAILURES: dict[str, tuple[str, str]] = {}
+
+
 def _safe_diagnose(case: dict) -> dict | None:
+    """Swallow the failure but keep the reason.
+
+    The first real run reported `errors: 5` and nothing else, which is not enough to
+    act on — a transient 429 and a model returning an out-of-taxonomy pattern are the
+    same number but completely different problems. Reasons are aggregated into the
+    metrics so the report says which happened.
+    """
     try:
         return _diagnose(case)
-    except Exception:
+    except Exception as exc:
         logger.exception("diagnosis failed for eval case %s", case["id"])
+        _FAILURES[case["id"]] = (type(exc).__name__, str(exc)[:200])
         return None
+
+
+def _failure_summary(case_ids: list[str]) -> dict[str, Any]:
+    """Group this suite's failures by exception type, with one example each."""
+    relevant = {cid: _FAILURES[cid] for cid in case_ids if cid in _FAILURES}
+    by_type: dict[str, dict[str, Any]] = {}
+    for cid, (kind, message) in relevant.items():
+        entry = by_type.setdefault(kind, {"count": 0, "example_case": cid, "example": message})
+        entry["count"] += 1
+    return by_type
 
 
 # --------------------------------------------------------------------------- Suite A
@@ -104,6 +125,7 @@ def run_suite_a() -> dict[str, Any]:
         "cases": len(cases),
         "scored": scored,
         "errors": errors,
+        "error_breakdown": _failure_summary([c["id"] for c in cases]),
         "top_1_accuracy": round(scoring.accuracy(pairs), 4),
         "top_2_accuracy": round(scoring.top_2_accuracy(triples), 4),
         "macro_f1": round(scoring.macro_f1(pairs), 4),
@@ -328,6 +350,11 @@ def run_suite_d() -> dict[str, Any]:
         "cases": total,
         "valid_diagnoses": valid,
         "errors": errors,
+        # An errored case never increments `valid`, so it fails the gate below. That is
+        # deliberate — a case that did not run is not a case that passed — but the
+        # breakdown matters, because a transient 429 and a genuine injection failure
+        # look identical in the pass/fail line.
+        "error_breakdown": _failure_summary([c["id"] for c in cases]),
         "followed_injection": len(followed),
         "violations": followed,
         "pass_rate": round(valid / total, 4) if total else 0.0,

@@ -28,7 +28,7 @@ from .state import GraphState
 
 logger = logging.getLogger(__name__)
 
-RRF_K = 10
+RRF_K = 60
 ARM_LIMIT = 50
 FINAL_LIMIT = 3
 
@@ -76,7 +76,11 @@ def keyword_arm(
              WHERE (:tsquery = '' OR to_tsvector('english', title) @@
                     to_tsquery('english', :tsquery))
                 OR tags::text[] && CAST(:tags AS text[])
-             ORDER BY tag_overlap DESC, text_rank DESC
+             -- `id` breaks ties deterministically. Without it Postgres returns tied
+             -- rows in physical heap order, which changes after any re-seed, so the
+             -- top 3 and therefore precision@3 drift between runs on identical data.
+             -- Suite C moved 0.522 -> 0.507 on nothing but a re-seed before this.
+             ORDER BY tag_overlap DESC, text_rank DESC, id
              LIMIT :limit
             """
         ),
@@ -97,7 +101,7 @@ def vector_arm(db: Session, *, pattern_id: str, limit: int = ARM_LIMIT) -> list[
             SELECT id
               FROM problems
              WHERE embedding IS NOT NULL
-             ORDER BY embedding <=> CAST(:vec AS vector)
+             ORDER BY embedding <=> CAST(:vec AS vector), id
              LIMIT :limit
             """
         ),
@@ -115,19 +119,20 @@ def reciprocal_rank_fusion(
 
     Unweighted fusion of these two arms measurably loses to the keyword arm alone on
     precision@3 — the vector arm is the weaker of the two, and giving it an equal vote
-    pushes correct results out of the top 3. Both defaults below correct for that:
+    pushes correct results out of the top 3. `ARM_WEIGHTS` corrects that: keyword is
+    favoured because the vector arm is a strictly lossier view of the same information.
+    Problem statements are copyrighted, so embeddings only ever see title and tags,
+    which is precisely what the keyword arm indexes directly and exactly. The vector arm
+    can only blur that signal, never add to it.
 
-    * `ARM_WEIGHTS` favours keyword because the vector arm is a strictly lossier view of
-      the same information. Problem statements are copyrighted, so embeddings only ever
-      see title and tags — which is precisely what the keyword arm indexes directly and
-      exactly. The vector arm can only blur that signal, never add to it.
-    * `RRF_K = 10` rather than the conventional 60. With k=60 the contributions of ranks
-      1 and 10 differ by under 15%, which throws away nearly all the ranking information
-      when only three results survive.
+    `k` stays at the conventional 60. An earlier sweep picked k=10 and it did not
+    survive: that sweep ran before the arms had deterministic tie-breaking, so
+    precision@3 was drifting by a couple of points between runs on identical data, and
+    k=10 was fitting that drift. Re-swept against stable measurements, k=60 wins
+    outright (0.522 vs 0.493 precision@3).
 
-    Both were confirmed by a sweep on Suite C, but that set covers 23 patterns, so the
-    margins are worth roughly one case. Treat these as reasoned defaults that the
-    evidence did not contradict, not as tuned optima.
+    Suite C covers 23 patterns, so a 0.03 margin is worth under one case. The weighting
+    is a reasoned default the evidence supports; it is not a tuned optimum.
     """
     if weights is None:
         weights = [1.0] * len(ranked_lists)

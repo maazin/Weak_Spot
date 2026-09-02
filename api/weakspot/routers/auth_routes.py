@@ -39,8 +39,12 @@ def github_start() -> RedirectResponse:
         state,
         max_age=600,
         httponly=True,
+        # Deliberately lax rather than following the session cookie's policy. This one
+        # is only ever read when GitHub redirects the browser back here, which is a
+        # top-level GET navigation, and Lax attaches cookies to those. Widening it
+        # would expose the CSRF state to cross-site requests for no benefit.
         samesite="lax",
-        secure=settings.is_production,
+        secure=settings.cookie_secure,
     )
     return response
 

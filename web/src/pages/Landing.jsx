@@ -1,12 +1,33 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { ErrorNote } from '../components/Chrome';
+import { ErrorNote, ThemeToggle } from '../components/Chrome';
 
 /**
- * Landing + auth. hero.png leaves its left two-thirds empty by design, so the headline
- * and CTA are laid over that region rather than baked into the image.
+ * Landing and sign-in.
+ *
+ * The headline sits on a solid panel rather than directly over hero.png. Text laid on
+ * an image inherits whatever contrast that image happens to have, and a solid ground
+ * keeps the copy at a fixed ratio in both appearances.
  */
+const STEPS = [
+  {
+    n: '01',
+    title: 'Name the failure',
+    body: 'One conceptual failure mode drawn from a closed taxonomy of 51, across pattern selection, implementation, complexity, and comprehension.',
+  },
+  {
+    n: '02',
+    title: 'Show the evidence',
+    body: 'The lines in your own submission that demonstrate the gap, quoted back with a reason for each. A working solution is never returned.',
+  },
+  {
+    n: '03',
+    title: 'Drill it until it holds',
+    body: 'Three problems that exercise the same pattern, scheduled on spaced intervals so the mistake has to be unlearned rather than noted.',
+  },
+];
+
 export default function Landing({ onSignedIn }) {
   const navigate = useNavigate();
   const [error, setError] = useState(null);
@@ -22,7 +43,7 @@ export default function Landing({ onSignedIn }) {
     } catch (e) {
       setError(
         e.status === 404
-          ? 'Local sign-in is disabled. Use GitHub, or set DEV_AUTH_BYPASS=true.'
+          ? 'Local sign-in is switched off. Use GitHub, or set DEV_AUTH_BYPASS=true.'
           : e.message,
       );
     } finally {
@@ -32,73 +53,88 @@ export default function Landing({ onSignedIn }) {
 
   return (
     <div className="min-h-screen">
-      <header className="mx-auto max-w-5xl px-4 py-6">
-        <img
-          src="/assets/logo-horizontal-dark.png"
-          alt="Weakspot"
-          className="h-8 w-auto"
-        />
+      <header className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-2.5">
+          <img src="/assets/mark.svg" alt="" width="24" height="24" />
+          <span className="font-serif text-[15px] font-semibold tracking-tight text-ink">
+            Weakspot
+          </span>
+        </div>
+        <ThemeToggle />
       </header>
 
-      <main className="relative mx-auto max-w-5xl px-4">
-        <div className="relative overflow-hidden rounded-xl border border-edge">
-          <img
-            src="/assets/hero.png"
-            alt=""
-            className="h-auto w-full"
-            width="1600"
-            height="900"
-          />
-          <div className="absolute inset-y-0 left-0 flex w-full flex-col justify-center gap-5 p-6 sm:w-2/3 sm:p-10">
-            <h1 className="max-w-md text-2xl font-semibold leading-tight tracking-tight text-zinc-50 sm:text-4xl">
+      <main className="mx-auto max-w-5xl px-4 sm:px-6">
+        <section className="grid items-center gap-10 border-b border-hairline py-14 sm:py-20 lg:grid-cols-[7fr,5fr] lg:gap-16">
+          <div>
+            <p className="eyebrow">Diagnosis for failed attempts</p>
+            <h1 className="mt-4 font-serif text-[2rem] font-semibold text-ink sm:text-hero">
               Find out why you actually failed.
             </h1>
-            <p className="max-w-sm text-sm text-zinc-300 sm:text-base">
-              Weakspot names the conceptual gap behind a failed attempt, quotes the lines
-              in your own code that show it, and queues three problems that drill the same
-              pattern until it sticks.
+            <p className="mt-5 max-w-prose text-lead text-ink-2">
+              Weakspot names the conceptual gap behind an attempt that did not pass,
+              quotes the lines in your code that show it, and queues problems that
+              exercise the same pattern.
             </p>
-            <div className="flex flex-col items-start gap-3">
+
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <a href={api.githubLoginUrl()} className="btn-primary">
                 Continue with GitHub
               </a>
-              <button onClick={devLogin} disabled={busy} className="btn-ghost">
-                {busy ? 'Signing in…' : 'Continue without an account (local dev)'}
+              <button type="button" onClick={devLogin} disabled={busy} className="btn-secondary">
+                {busy ? 'Signing in' : 'Continue without an account'}
               </button>
             </div>
-            <div className="max-w-sm">
+
+            <div className="mt-5 max-w-prose">
               <ErrorNote>{error}</ErrorNote>
             </div>
           </div>
-        </div>
 
-        <section className="my-12 grid gap-4 sm:grid-cols-3">
-          {[
-            {
-              title: 'One named failure mode',
-              body: 'From a closed taxonomy of 50, across pattern selection, implementation, complexity, and comprehension.',
-            },
-            {
-              title: 'Evidence from your code',
-              body: 'The specific lines that demonstrate the gap, quoted back with a reason. Never a solution.',
-            },
-            {
-              title: 'Spaced practice',
-              body: 'Three same-pattern problems on an SM-2 schedule, so the mistake stops recurring.',
-            },
-          ].map((item) => (
-            <div key={item.title} className="card">
-              <h2 className="mb-1.5 text-sm font-medium text-accent">{item.title}</h2>
-              <p className="text-sm leading-relaxed text-zinc-400">{item.body}</p>
-            </div>
-          ))}
+          {/* hero.png was composed with its left two-thirds empty for an overlay, so the
+              frame is pinned right to keep the subject inside the panel. */}
+          <div className="hidden overflow-hidden rounded border border-hairline bg-raised lg:block">
+            <img
+              src="/assets/hero.png"
+              alt=""
+              className="aspect-[4/3] w-full object-cover object-right"
+              width="1600"
+              height="900"
+            />
+          </div>
+        </section>
+
+        <section aria-labelledby="how" className="py-14 sm:py-20">
+          <h2 id="how" className="eyebrow">
+            How it works
+          </h2>
+          <ol className="mt-8">
+            {STEPS.map((step) => (
+              <li
+                key={step.n}
+                className="grid gap-3 border-t border-hairline py-7 sm:grid-cols-[4rem,14rem,1fr] sm:gap-8"
+              >
+                <span className="font-serif text-title font-semibold text-brass tabular-nums">
+                  {step.n}
+                </span>
+                <h3 className="text-body font-semibold text-ink">{step.title}</h3>
+                <p className="max-w-prose text-body text-ink-2">{step.body}</p>
+              </li>
+            ))}
+          </ol>
         </section>
       </main>
+
+      <footer className="border-t border-hairline">
+        <p className="mx-auto max-w-5xl px-4 py-8 text-micro text-ink-2 sm:px-6">
+          Problem statements stay on the sites that own them. Weakspot stores titles,
+          difficulty, tags, and a link.
+        </p>
+      </footer>
     </div>
   );
 }
 
-/** Sign-in screen: stacked lockup centred above the GitHub button, per spec. */
+/** Sign-in on its own, using the stacked lockup. */
 export function SignIn({ onSignedIn }) {
   const navigate = useNavigate();
   const [error, setError] = useState(null);
@@ -114,19 +150,17 @@ export function SignIn({ onSignedIn }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
-      <img
-        src="/assets/logo-stacked-dark.png"
-        alt="Weakspot"
-        className="w-40 max-w-full"
-      />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-7 px-4">
+      <img src="/assets/logo-stacked-dark.png" alt="Weakspot" className="w-36 max-w-full" />
       <a href={api.githubLoginUrl()} className="btn-primary">
         Continue with GitHub
       </a>
-      <button onClick={devLogin} className="text-xs text-muted hover:text-zinc-300">
-        Local dev sign-in
+      <button type="button" onClick={devLogin} className="btn-quiet text-micro">
+        Local sign-in
       </button>
-      <ErrorNote>{error}</ErrorNote>
+      <div className="max-w-prose">
+        <ErrorNote>{error}</ErrorNote>
+      </div>
     </div>
   );
 }
