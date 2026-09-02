@@ -129,3 +129,54 @@ def test_pattern_signals_reach_the_verifier():
 @pytest.mark.parametrize("field", ["passed", "reason"])
 def test_schema_keeps_its_reporting_fields(field):
     assert field in prompt.SCHEMA["required"]
+
+
+# ------------------------------------------------------- session cookie policy
+
+
+def _settings(**env):
+    """A fresh Settings instance, bypassing the process-wide lru_cache."""
+    import os
+
+    from weakspot.config import Settings
+
+    saved = {k: os.environ.get(k) for k in env}
+    os.environ.update({k: str(v) for k, v in env.items()})
+    try:
+        return Settings()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def test_production_defaults_to_a_cross_site_session_cookie():
+    """The web app and the API are on separate hosts in every deployment target here.
+
+    A SameSite=Lax cookie is not attached to cross-site fetches, so the previous
+    hardcoded "lax" would have authenticated once through the OAuth redirect and then
+    returned 401 for every call the frontend made afterwards.
+    """
+    s = _settings(ENV="production", SESSION_COOKIE_SAMESITE="")
+    assert s.cookie_samesite == "none"
+    assert s.cookie_secure is True
+
+
+def test_development_keeps_lax_so_plain_http_still_works():
+    s = _settings(ENV="development", SESSION_COOKIE_SAMESITE="")
+    assert s.cookie_samesite == "lax"
+    assert s.cookie_secure is False
+
+
+def test_same_domain_deployments_can_opt_back_to_lax():
+    s = _settings(ENV="production", SESSION_COOKIE_SAMESITE="lax")
+    assert s.cookie_samesite == "lax"
+    assert s.cookie_secure is True
+
+
+def test_samesite_none_always_forces_secure():
+    """Browsers drop a SameSite=None cookie that is not Secure, without saying so."""
+    s = _settings(ENV="development", SESSION_COOKIE_SAMESITE="none")
+    assert s.cookie_secure is True

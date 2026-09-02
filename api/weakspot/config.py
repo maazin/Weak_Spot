@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     github_client_secret: str = ""
     github_callback_url: str = "http://localhost:8000/api/v1/auth/github/callback"
     web_origin: str = "http://localhost:5173"
+    # Blank means "decide from ENV": lax in development, none in production. The web app
+    # and the API are served from separate hosts in every deployment target here, and a
+    # SameSite=Lax cookie is not attached to cross-site fetches, so a production deploy
+    # on the default value would authenticate once and then 401 on every subsequent
+    # call. Set this to "lax" explicitly when both are on one registrable domain.
+    session_cookie_samesite: str = ""
     # Mints a local session without GitHub. Refused outright when env == production.
     dev_auth_bypass: bool = False
 
@@ -62,6 +68,18 @@ class Settings(BaseSettings):
         return self.env.lower() in {"production", "prod"}
 
     @property
+    def cookie_samesite(self) -> str:
+        """SameSite policy for the session cookie."""
+        if self.session_cookie_samesite:
+            return self.session_cookie_samesite.lower()
+        return "none" if self.is_production else "lax"
+
+    @property
+    def cookie_secure(self) -> bool:
+        """SameSite=None is rejected by browsers unless the cookie is also Secure."""
+        return self.is_production or self.cookie_samesite == "none"
+
+    @property
     def llm_enabled(self) -> bool:
         return bool(self.anthropic_api_key)
 
@@ -75,4 +93,12 @@ def get_settings() -> Settings:
     s = Settings()
     if s.is_production and s.dev_auth_bypass:
         raise RuntimeError("DEV_AUTH_BYPASS must never be enabled in production")
+    if s.cookie_samesite not in {"lax", "none", "strict"}:
+        raise RuntimeError(
+            f"SESSION_COOKIE_SAMESITE must be lax, none, or strict; got {s.cookie_samesite!r}"
+        )
+    if s.cookie_samesite == "none" and not s.cookie_secure:
+        # Browsers silently drop such a cookie, which reads as a broken login rather
+        # than a misconfiguration, so fail at startup instead.
+        raise RuntimeError("SameSite=None requires a Secure cookie, which requires HTTPS")
     return s

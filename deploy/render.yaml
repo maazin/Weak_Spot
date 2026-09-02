@@ -19,11 +19,18 @@ services:
         value: "false"
       - key: TAXONOMY_PATH
         value: /taxonomy/patterns.yaml
+      # Set to the full origin of the web service, scheme included, for example
+      # https://weakspot-web.onrender.com. `fromService ... property: host` returns a
+      # bare hostname, which the CORS check compares against an Origin header that
+      # always carries a scheme, so it never matches.
       - key: WEB_ORIGIN
-        fromService:
-          name: weakspot-web
-          type: web
-          property: host
+        sync: false
+      # The API and the web app sit on different hosts under onrender.com, which is on
+      # the Public Suffix List, so they are cross-site. A SameSite=Lax session cookie
+      # is not attached to the frontend's fetches and every call returns 401. Leave
+      # this at none unless both end up on one registrable domain.
+      - key: SESSION_COOKIE_SAMESITE
+        value: none
       # Set in the dashboard, not here.
       - key: DATABASE_URL
         sync: false
@@ -52,6 +59,8 @@ services:
     buildCommand: cd web && npm ci && npm run build
     staticPublishPath: ./web/dist
     envVars:
+      # Vite inlines this into the bundle at build time, so it has to be present for
+      # the build command rather than at runtime. Set it to the API's full origin.
       - key: VITE_API_BASE
         sync: false
     routes:
