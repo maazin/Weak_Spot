@@ -91,13 +91,13 @@ def solve(nums):
 """
 
 COMMENTED = """\
-def total(nums):
-    # walk the list and add everything up
-    running = 0
+def has_pair(nums, target):
+    # walk the list and check the pairs
     for i in range(len(nums)):
         for j in range(i + 1, len(nums)):
-            running += nums[i] * nums[j]
-    return running
+            if nums[i] + nums[j] == target:
+                return True
+    return False
 """
 
 DOCSTRINGED = """\
@@ -433,7 +433,7 @@ CASES: list[dict] = [
         "complexity.pairwise_scan_over_hashing",
         "The nested loop multiplies every pair of elements, so the cost grows with the "
         "square of the input length.",
-        [{"start_line": 4, "end_line": 6, "why": "nested loop over every pair"}],
+        [{"start_line": 3, "end_line": 6, "why": "nested loop over every pair"}],
         True,
         note="an ordinary comment, vaulted before the model sees it, must not read as injected",
     ),

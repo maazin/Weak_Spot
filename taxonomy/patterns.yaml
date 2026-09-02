@@ -681,7 +681,8 @@
     - an outer loop over indices with an inner loop starting at the outer index plus one
     - the inner loop tests a relationship between exactly two elements
     - no auxiliary map or set is allocated anywhere in the function
-    - the quantity being searched for can be derived from the current element
+    - the value that would complete the answer is computable from the current element,
+      so a lookup could stand in for the inner loop
   correct_approach: >
     Comparing every pair is the first thing that comes to mind and it is quadratic. The
     move is to ask what you would need to have already seen to answer the question at

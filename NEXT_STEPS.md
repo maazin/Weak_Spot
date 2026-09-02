@@ -1,6 +1,6 @@
 # Next steps
 
-The build is complete and all four eval suites are measured — see
+The build is complete and all four eval suites are measured, see
 [EVAL_REPORT.md](EVAL_REPORT.md). What follows is what is left, ordered by value.
 
 Item 1 is a real correctness gap in the product. Items 2–4 are things only you can do,
@@ -13,14 +13,14 @@ because they need your judgement or your accounts.
 **The one genuine product bug still open.** A live end-to-end run submitted an O(n²)
 brute-force two-sum and got back:
 
-- pattern: `complexity.list_membership_scan` — *"Tested membership against a list instead
+- pattern: `complexity.list_membership_scan`, *"Tested membership against a list instead
   of a hash set"*
 - confidence: **0.15**
 - verifier: **passed**
 
 The code never tests membership against a list; it does a nested-loop pair scan. The
 explanation described the nested loop correctly, so the prose and the pattern label
-disagree — and the verifier waved it through at 15% confidence.
+disagree, and the verifier waved it through at 15% confidence.
 
 That points at a specific gap: the verifier's first check confirms the evidence spans are
 grounded in real lines of the submission, but nothing confirms those lines actually
@@ -32,7 +32,7 @@ demonstrate the *named pattern*. Two things worth doing:
    wrong; either surface the uncertainty in the UI or treat a low-confidence result as a
    verifier rejection and escalate.
 
-This may also be depressing Suite A's 75% top-1 — some of those misses are likely the same
+This may also be depressing Suite A's 75% top-1, some of those misses are likely the same
 failure, so fixing it and re-running Suite A is the natural way to measure the impact.
 
 ---
@@ -43,7 +43,7 @@ Suite C covers 23 of 50 patterns (46%). Every retrieval conclusion in the README
 that sample, and at n=23 a 0.03 precision@3 margin is worth under one case.
 
 This already bit once: a weight sweep picked `k=10`, and it did not survive being re-run
-against deterministic measurements — the conventional `k=60` won instead. The arm
+against deterministic measurements, the conventional `k=60` won instead. The arm
 weighting held up, but the episode is a fair warning about how much this set can carry.
 
 Labelling the remaining 27 patterns is the single highest-value eval investment. Fixtures
@@ -51,13 +51,13 @@ live in `api/evals/fixtures/`.
 
 ---
 
-## 3. Review the fixtures — they are my labels, not yours
+## 3. Review the fixtures: they are my labels, not yours
 
 The spec asks for *you* to write these specifically so they cannot drift toward what the
 model would say. I wrote all of them.
 
-- `suite_a_*.py` — 124 diagnosis labels. Suite A's 75.0% is only as meaningful as these.
-- `suite_b_judge.py` — 60 human ratings. **Suite B's κ = 0.258 is uninterpretable until
+- `suite_a_*.py`, 124 diagnosis labels. Suite A's 75.0% is only as meaningful as these.
+- `suite_b_judge.py`, 60 human ratings. **Suite B's κ = 0.258 is uninterpretable until
   these are independently written.** Right now it measures how well the model reproduces
   one person's judgement, not calibration against a ground truth.
 
@@ -80,7 +80,7 @@ failed) and reproduced the full sequence locally, but `gh` is missing so I never
 real run. Check <https://github.com/maazin/Weak_Spot/actions>.
 
 **GitHub OAuth.** The only way in today is the dev bypass, which refuses to run in
-production — so a deployed instance currently has no working sign-in.
+production, so a deployed instance currently has no working sign-in.
 <https://github.com/settings/developers> → New OAuth App, callback
 `https://<your-api-host>/api/v1/auth/github/callback`.
 
@@ -100,7 +100,7 @@ Or point a Render Blueprint at `deploy/render.yaml`. The entrypoint runs
 reports `"schema_current": true`.
 
 Once it is live, paste the URL into <https://www.opengraph.xyz> to confirm the social card
-— that needs a real domain, so it could not be checked locally.
+,  that needs a real domain, so it could not be checked locally.
 
 **Measure latency.** The README's p95 < 6s is a target, not a result; `/metrics` only
 fills in under real traffic. The one measured run was 26.8 s, but it included a verifier
@@ -129,12 +129,12 @@ attribution to point at in an interview.
 | Migrations | up / `alembic check` / downgrade all verified |
 | MCP | real protocol, verified with the `mcp` client library |
 | End-to-end | verified live: real submission → diagnosis → 3 recommendations → review queue |
-| Suite D — injection | **PASS**, 40/40 valid, 0 followed |
-| Suite A — accuracy | 0.750 top-1, 0.823 top-2, macro F1 0.738, 124/124 |
-| Suite C — retrieval | hybrid 0.522 / 0.739, beats both baselines |
-| Suite B — judge | κ 0.258 — weak, and **not trustworthy until fixtures are yours** |
+| Suite D, injection | **PASS**, 40/40 valid, 0 followed |
+| Suite A, accuracy | 0.750 top-1, 0.823 top-2, macro F1 0.738, 124/124 |
+| Suite C, retrieval | hybrid 0.522 / 0.739, beats both baselines |
+| Suite B, judge | κ 0.258, weak, and **not trustworthy until fixtures are yours** |
 | Cost per diagnosis | **$0.00343** |
-| Latency percentiles | **unmeasured** — needs real traffic |
+| Latency percentiles | **unmeasured**, needs real traffic |
 | CI | fixed and reproduced locally; **not observed green on GitHub** |
 | Fixtures | written by me, not reviewed by you |
 | Deploy / OAuth | configured, not executed |
@@ -142,7 +142,7 @@ attribution to point at in an interview.
 ## One deliberate deviation from the spec
 
 The spec lists LangChain as the LLM client. The code uses the Anthropic SDK directly and
-keeps LangGraph for orchestration — driven by three other spec requirements: exact
+keeps LangGraph for orchestration, driven by three other spec requirements: exact
 `cache_control` placement, reading real `cache_read_input_tokens` for cost, and forced
 `tool_choice` schema enforcement. It is isolated in `api/weakspot/llm.py`, so reverting is
 a single-file change. Stated in the README too, so it reads as a decision rather than an

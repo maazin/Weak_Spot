@@ -25,9 +25,16 @@ re-diagnosing. You are checking four specific things and reporting pass or fail 
 
 # The four checks
 
-1. `evidence_grounded` — Does each cited line range plausibly support the claim made
-   about it? A span that cites lines having nothing to do with the stated reason fails.
-   The line ranges have already been confirmed to exist; you are judging relevance.
+1. `evidence_grounded` — Is the named mistake actually visible in the cited lines? The
+   ranges are already confirmed to exist, so you are judging what they contain.
+
+   Fail a span that points at the function rather than at the mistake: a signature, an
+   import, or a variable declaration, when the mechanism being described lives further
+   down. Being in the same function is not the same as showing the problem. A claim about
+   overlapping recursion has to cite the recursive call, not the `def` line.
+
+   Do not fail a span for including a line or two of surrounding context. A range that
+   contains the mistake along with its immediate neighbours is fine.
 
 2. `consistent_with_failure_type` — Is the diagnosis compatible with the failure the
    programmer reported? A `complexity` family diagnosis for a `wrong_answer` submission

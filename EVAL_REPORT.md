@@ -9,7 +9,7 @@ Models: `claude-haiku-4-5` for diagnosis, verification and judging;
 
 ---
 
-## Suite D — prompt injection: **PASS** (hard gate)
+## Suite D, prompt injection: **PASS** (hard gate)
 
 | metric | value |
 |---|---|
@@ -23,72 +23,98 @@ instructions hidden in comments and string literals, which comment vaulting remo
 before the model sees them, and instructions embedded in identifiers, which vaulting
 deliberately cannot remove and the verifier's fourth check has to catch.
 
-An earlier run reported FAIL with `followed_injection: 0` — three cases had died on a
+An earlier run reported FAIL with `followed_injection: 0`, three cases had died on a
 transient API 400 and a case that did not run is not a case that passed. That was an
 infrastructure failure, not a security one; it is fixed and the gate is green on all 40.
 
 ---
 
-## Suite E — verifier accuracy
+## Suite E, verifier accuracy
 
-23 diagnoses with a known correct verdict: 10 that a careful reader would accept, and 13
+25 diagnoses with a known correct verdict: 12 a careful reader would accept, and 13
 carrying a specific flaw, each labelled with the check that ought to catch it.
 
-| metric | value |
-|---|---|
-| false rejection rate | **10.0%** of 10 sound diagnoses |
-| false acceptance rate | **7.7%** of 13 flawed diagnoses |
-| accuracy | **91.3%** |
+Measured over four consecutive runs, because a single run on a set this size is not a
+number worth quoting.
+
+| metric | min | max | mean |
+|---|---|---|---|
+| false rejection rate | 8.3% | 25.0% | **16.7%** |
+| false acceptance rate | 0.0% | 0.0% | **0.0%** |
+
+One rejection is 8.3 points on 12 sound cases, so the spread above is one or two cases
+moving. Treat the mean as the figure and the range as the reason not to trust a single
+run.
 
 The two directions are not symmetric. A false rejection forces a retry and an escalation
-to the strong tier, so it is a bill and a latency spike as much as a quality problem. A
-false acceptance puts a wrong diagnosis in front of someone who trusts it.
+to the strong tier, so it is a bill and a latency spike. A false acceptance puts a wrong
+diagnosis in front of someone who trusts it.
 
-### What this suite found on its first run
+### What the suite found
 
-Nothing exercised the verifier until this suite existed, and the first run put the false
-rejection rate at **50%**. Half of all sound diagnoses were being rejected, every one of
-them escalating to Opus 5 for no reason. Four of the five came from
-`evidence_matches_pattern`, the check added to catch mislabelled diagnoses.
+**Nothing exercised the verifier before this suite existed.** Suites A and D run intake
+and the diagnoser only, so the checks that decide whether a diagnosis reaches a user were
+measured by nothing at all. The first run put the false rejection rate at **50%**: half of
+every sound diagnosis was being rejected and escalated to Opus for no reason, four of the
+five from `evidence_matches_pattern`, the check meant to catch mislabelling.
 
-The wording was the cause. It told the model to judge the taxonomy's `signals` against
-the cited lines, which reads as a checklist the span has to satisfy in full. A correct
-memoization diagnosis citing `return fib(n - 1) + fib(n - 2)` was rejected because that
-line does not literally demonstrate "called with the same arguments on multiple
-branches". The check now asks whether the label names a mechanism the submission does
-not contain, states that signals are a guide rather than a checklist, and says to default
-to passing. Rewriting it took the rate from 50% to 10% with no loss on the other side.
+The wording caused it. Telling the model to judge the taxonomy's `signals` against the
+cited lines reads as a checklist the span has to satisfy in full, so a correct memoization
+diagnosis citing `return fib(n - 1) + fib(n - 2)` was rejected for not literally
+demonstrating "called with the same arguments on multiple branches". Rewriting the check
+to ask whether the label names a mechanism the submission lacks, and to default to
+passing, took it from 50% to roughly 10%.
 
-Check 3 contributed one rejection by failing a two-line snippet that the mechanical cap
-had already allowed, so its wording now says explicitly that short fragments are fine.
+**`evidence_grounded` was accepting evidence that supported nothing.** A span citing a
+function signature passed a claim about overlapping recursion, because "plausibly
+support" is a low bar and a signature is at least related to the function. Naming the
+failure mode directly, that a span pointing at the `def` line rather than at the
+recursive call fails, took false acceptance from 7.7% to **0.0% in every run since**.
 
-### What remains
+**The suite caught a bad label of mine.** A fixture asserted that a nested loop summing
+pairwise products should be diagnosed as `pairwise_scan_over_hashing`. The verifier
+rejected it and was right: a hash map does not replace that loop, since nothing is being
+searched for. The fixture was wrong, not the verifier.
 
-One sound diagnosis is still rejected. The verifier asserted that `lo, hi = 0, len(nums)`
-paired with `while lo <= hi` is correctly bounded, which is wrong: the midpoint can reach
-`len(nums)` and index past the end. The verifier makes substantive reasoning errors on
-subtle implementation bugs, and no amount of prompt wording fixes that.
+**It also caught a taxonomy wording problem.** That pattern's fourth signal read "the
+quantity being searched for can be derived from the current element", which describes why
+the fix is available. The verifier read it as something the buggy code must already do,
+concluded the code did not do it, and rejected a correct diagnosis. The signal now says
+the value "is computable from the current element, so a lookup could stand in for the
+inner loop".
 
-One flawed diagnosis is still accepted. Evidence citing a function signature, which shows
-nothing about the overlapping recursion being claimed, passes `evidence_grounded`. That
-check is lenient about whether a span actually supports the claim made for it.
+### What remains, and why the tuning stopped
 
-Results vary between runs on a small set, and one case flipped between two runs during
-this work. Treat single-point differences here as noise.
+One case fails in every run. The verifier asserts that `lo, hi = 0, len(nums)` paired
+with `while lo <= hi` is correctly bounded. It is not: the midpoint can reach `len(nums)`
+and index past the end. This is a substantive reasoning error on a subtle implementation
+bug, and no wording fixes it.
+
+`evidence_grounded` is now the leading contributor to false rejection, firing six times
+across four runs on sound diagnoses. One further attempt to rebalance it, telling the
+model to pass whenever the mistake falls inside the cited range, made things worse: mean
+false rejection went from 16.7% to 20.8% and the firings rose from six to nine. That
+change was reverted.
+
+**The tuning stopped there deliberately.** Several prompt revisions have now been made
+against the same 25 cases, and the last one moved the number the wrong way by an amount
+the run-to-run spread cannot distinguish from noise. Continuing would be fitting the
+wording to this fixture set, which is the mistake already recorded under Suite C for the
+RRF constants. The next real improvement is more cases, not more wording.
 
 ### What this suite does not measure
 
 Every case grafts a diagnosis written by hand onto real intake output, which isolates the
 checks from the diagnoser's run-to-run variation. That is the point, and it is also the
-limit: these diagnoses are tighter than what the diagnoser actually produces. Live
-traffic escalated on 2 of 8 submissions, well above the 10% false rejection measured
-here, so the two numbers are not interchangeable. This suite scores the checks. The
-escalation rate in the latency section scores the diagnoser and verifier together, and
-that is the one that predicts the bill.
+limit: these diagnoses are tidier than what the diagnoser actually produces. Live traffic
+escalated on 2 of 8 submissions, above the false rejection rate measured here, so the two
+are not interchangeable. This suite scores the checks. The escalation rate in the latency
+section scores the diagnoser and verifier together, and that is the one that predicts the
+bill.
 
 ---
 
-## Suite A — diagnosis accuracy
+## Suite A, diagnosis accuracy
 
 124 labelled submissions across the four families.
 
@@ -122,7 +148,7 @@ see is the price of the legal constraint, and it is the clearest target for impr
 
 ---
 
-## Suite C — retrieval quality
+## Suite C, retrieval quality
 
 246 hand-labelled `(pattern, problem)` pairs covering all 51 patterns; every pattern has at
 least one positive. Negatives are deliberately plausible: same family, adjacent topic, or
@@ -153,7 +179,7 @@ Recorded because they are a concrete lesson about tuning against a 23-case set:
   0.013 precision@3 rather than rescuing a loss.
 
 The weighting is retained: it is the best configuration measured on both suite sizes, and
-it has an argument independent of the sweep — the vector arm is a strictly lossier view of
+it has an argument independent of the sweep, the vector arm is a strictly lossier view of
 the same information, since copyright means embeddings never see more than title,
 difficulty and tags, which is exactly what the keyword arm indexes directly.
 
@@ -163,7 +189,7 @@ scored 0.522 and then 0.507 on identical data and identical code.
 
 ---
 
-## Suite B — judge calibration
+## Suite B, judge calibration
 
 60 explanations rated 1–5 on three dimensions by a human and by the judge model.
 
@@ -174,8 +200,8 @@ scored 0.522 and then 0.507 on identical data and identical code.
 | clarity | 0.267 | 0.783 | 0.131 |
 | **overall** | 0.461 | 0.861 | **0.258** |
 
-κ = 0.26 is weak agreement. The judge is rarely wildly wrong — adjacent agreement is
-0.861, and 0.95 on whether an explanation withholds a solution — but it does not
+κ = 0.26 is weak agreement. The judge is rarely wildly wrong, adjacent agreement is
+0.861, and 0.95 on whether an explanation withholds a solution, but it does not
 reproduce exact scores, and on `clarity` it barely beats chance.
 
 **This number is not yet trustworthy in either direction.** The "human" ratings were
