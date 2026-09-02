@@ -107,6 +107,13 @@ against the browser's `Origin` header, which always carries a scheme, so a bare
 hostname never matches. On Render, do not wire this with
 `fromService ... property: host`, because that returns a hostname only.
 
+**`SESSION_SECRET` must be set to a generated value.** It signs session cookies, and
+its development default is committed to this repository, so a deploy that inherited it
+would let anyone who can read the repo forge a session for any user. The app refuses to
+start in production while the default is in place, or if the value is under 32
+characters. Render generates one for you; on Fly, pass
+`SESSION_SECRET="$(openssl rand -base64 32)"`.
+
 **`SESSION_COOKIE_SAMESITE` must be `none` when the API and the web app are on
 different hosts.** They are on Fly, and on Render's default domains, because
 `onrender.com` is on the Public Suffix List. A `SameSite=Lax` cookie is not attached to

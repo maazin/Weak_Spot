@@ -8,6 +8,7 @@ itself is not confident in.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 
 import pytest
 
@@ -212,3 +213,62 @@ def test_client_retries_are_capped_so_the_layers_cannot_multiply():
 
     assert CLIENT_MAX_RETRIES <= 1
     assert REQUEST_TIMEOUT_SECONDS <= 60
+
+
+# ------------------------------------------------- production configuration guards
+
+
+@contextmanager
+def _production_env(**overrides):
+    """Construct settings as a production deploy would, one guard at a time.
+
+    DEV_AUTH_BYPASS is forced off because the suite runs with it on, and its guard
+    fires first, which would mask whichever one is under test.
+    """
+    import weakspot.config as cfg
+
+    env = {"ENV": "production", "DEV_AUTH_BYPASS": "false", **overrides}
+    saved = {k: os.environ.get(k) for k in env}
+    os.environ.update(env)
+    cfg.get_settings.cache_clear()
+    try:
+        yield cfg
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        cfg.get_settings.cache_clear()
+
+
+def test_production_refuses_the_published_default_session_secret():
+    """The default signs session cookies and is committed to this repository.
+
+    A deploy that inherited it would let anyone who can read the repo forge a session
+    for any user id, so it has to fail at startup rather than serve traffic.
+    """
+    from weakspot.config import DEV_SESSION_SECRET
+
+    with _production_env(SESSION_SECRET=DEV_SESSION_SECRET) as cfg:
+        with pytest.raises(RuntimeError, match="development default"):
+            cfg.get_settings()
+
+
+def test_production_refuses_a_short_session_secret():
+    with _production_env(SESSION_SECRET="too-short") as cfg:
+        with pytest.raises(RuntimeError, match="at least"):
+            cfg.get_settings()
+
+
+def test_production_accepts_a_generated_secret():
+    with _production_env(SESSION_SECRET="k" * 40) as cfg:
+        assert cfg.get_settings().is_production
+
+
+def test_development_still_runs_on_the_default_secret():
+    """Local work must not need a generated secret."""
+    from weakspot.config import DEV_SESSION_SECRET
+
+    s = _settings(ENV="development", SESSION_SECRET=DEV_SESSION_SECRET)
+    assert not s.is_production

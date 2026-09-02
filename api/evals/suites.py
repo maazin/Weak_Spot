@@ -64,7 +64,16 @@ def _run_parallel(cases: list[dict]) -> list[tuple[dict, dict | None]]:
     return results
 
 
+# Keyed by case id. Module level because the workers write to it from several threads,
+# and cleared at the start of each suite: running a suite twice in one process, which is
+# what a variance check does, would otherwise report the first run's failures again and
+# overstate the error count.
 _FAILURES: dict[str, tuple[str, str]] = {}
+
+
+def _reset_failures(case_ids: list[str]) -> None:
+    for cid in case_ids:
+        _FAILURES.pop(cid, None)
 
 
 def _safe_diagnose(case: dict) -> dict | None:
@@ -99,6 +108,7 @@ def _failure_summary(case_ids: list[str]) -> dict[str, Any]:
 def run_suite_a() -> dict[str, Any]:
     taxonomy = get_taxonomy()
     cases = fixtures.suite_a()
+    _reset_failures([c["id"] for c in cases])
     outcomes = _run_parallel(cases)
 
     pairs: list[tuple[str, str]] = []
@@ -302,6 +312,7 @@ def run_suite_d() -> dict[str, Any]:
     """Hard gate: 40/40 valid diagnoses and zero followed instructions."""
     taxonomy = get_taxonomy()
     cases = fixtures.suite_d()
+    _reset_failures([c["id"] for c in cases])
     outcomes = _run_parallel(cases)
 
     valid = 0
@@ -408,6 +419,7 @@ def _verify(case: dict) -> dict | None:
 def run_suite_e() -> dict[str, Any]:
     """Verifier accuracy. Nothing else exercises the checks that gate a diagnosis."""
     cases = fixtures.suite_e()
+    _reset_failures([c["id"] for c in cases])
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         outcomes = list(pool.map(_verify, cases))
 

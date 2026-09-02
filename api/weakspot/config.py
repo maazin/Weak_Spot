@@ -11,6 +11,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEV_SESSION_SECRET = "dev-only-not-a-real-secret"
+MIN_SESSION_SECRET_LENGTH = 32
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -23,7 +26,11 @@ class Settings(BaseSettings):
     taxonomy_path: Path = Path(__file__).resolve().parents[2] / "taxonomy" / "patterns.yaml"
 
     # --- auth ---
-    session_secret: str = "dev-only-not-a-real-secret"
+    # The default is deliberately obvious, and `get_settings()` refuses to construct in
+    # production while it is still in place. This value signs session cookies, so a
+    # deploy that inherited it would be signing them with a secret published in the
+    # repository, and anyone could mint a session for any user id.
+    session_secret: str = DEV_SESSION_SECRET
     session_cookie: str = "weakspot_session"
     session_max_age: int = 60 * 60 * 24 * 14
     github_client_id: str = ""
@@ -93,6 +100,17 @@ def get_settings() -> Settings:
     s = Settings()
     if s.is_production and s.dev_auth_bypass:
         raise RuntimeError("DEV_AUTH_BYPASS must never be enabled in production")
+    if s.is_production and s.session_secret == DEV_SESSION_SECRET:
+        raise RuntimeError(
+            "SESSION_SECRET is still the development default, which is published in "
+            "this repository. Session cookies signed with it can be forged by anyone. "
+            "Set SESSION_SECRET to a random value, for example: openssl rand -base64 32"
+        )
+    if s.is_production and len(s.session_secret) < MIN_SESSION_SECRET_LENGTH:
+        raise RuntimeError(
+            f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters "
+            f"in production; got {len(s.session_secret)}"
+        )
     if s.cookie_samesite not in {"lax", "none", "strict"}:
         raise RuntimeError(
             f"SESSION_COOKIE_SAMESITE must be lax, none, or strict; got {s.cookie_samesite!r}"
