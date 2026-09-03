@@ -1,0 +1,31 @@
+# The build context is the repo root, because the image needs both api/ and taxonomy/.
+# Without this file that context is 351 MB across 24,435 files, almost all of it a local
+# virtualenv and node_modules that the image rebuilds anyway. It also keeps .env off the
+# build machine entirely.
+
+.git
+.github
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.claude
+
+# Python build and cache artefacts
+**/__pycache__
+**/*.py[cod]
+**/.venv
+**/venv
+**/*.egg-info
+**/.pytest_cache
+**/.ruff_cache
+
+# Node
+**/node_modules
+web/dist
+
+# Local scratch
+**/.DS_Store
+*.log
+api/evals/results

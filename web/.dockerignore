@@ -1,0 +1,7 @@
+# The build reinstalls dependencies and rebuilds the bundle, so neither needs uploading.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+**/.DS_Store

@@ -65,6 +65,17 @@ The container runs `alembic upgrade head` before serving, so the schema comes up
 first boot. Failing that step stops the container rather than serving against a
 mismatched schema.
 
+### Two path traps, both hit on the first real deploy
+
+`dockerfile` in a fly config is resolved **relative to the config file**, not to the
+working directory, which is why both configs say `../`. Without it fly looks for
+`deploy/api/Dockerfile` and stops with "dockerfile not found".
+
+The build context is the **working directory**, and the two images need different ones.
+The API image needs `taxonomy/` as well as `api/`, so it builds from the repo root. The
+web image's `COPY` paths are relative to `web/`, so it has to be deployed from inside
+`web/` or nginx.conf is not found.
+
 ## 4. Deploy the web app
 
 `VITE_API_BASE` is inlined into the bundle **at build time**, so it has to be set for
@@ -74,9 +85,8 @@ nothing.
 Render's blueprint already declares the static site. For a container host, build with:
 
 ```bash
-docker build --target production \
-  --build-arg VITE_API_BASE=https://<api-host> \
-  -t weakspot-web web/
+cd web && fly deploy -c ../deploy/fly.web.toml \
+  --build-arg VITE_API_BASE=https://<api-host>
 ```
 
 ## 5. Seed the index

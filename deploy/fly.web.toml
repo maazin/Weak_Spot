@@ -1,0 +1,29 @@
+# Fly config for the static frontend. Deploy from inside web/, because fly uses the
+# working directory as the build context and this image's COPY paths are relative to
+# web/. The API config is the opposite case: that image needs taxonomy/ as well, so it
+# builds from the repo root.
+#
+#   cd web && fly deploy -c ../deploy/fly.web.toml \
+#       --build-arg VITE_API_BASE=https://weakspot-api.fly.dev
+#
+# VITE_API_BASE is inlined into the bundle by Vite at build time, so it has to be a
+# build argument. Setting it as a runtime secret changes nothing.
+
+app = "weakspot-web"
+primary_region = "iad"
+
+[build]
+  # Resolved relative to this file, not the working directory.
+  dockerfile = "../web/Dockerfile"
+  build-target = "production"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

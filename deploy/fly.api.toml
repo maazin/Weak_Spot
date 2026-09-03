@@ -9,9 +9,10 @@ app = "weakspot-api"
 primary_region = "iad"
 
 [build]
-  # Relative to the repo root, which is the build context — the image needs both api/
-  # and taxonomy/.
-  dockerfile = "api/Dockerfile"
+  # Resolved relative to THIS FILE, not to the working directory, so it needs the
+  # `..` even though the build context is the repo root. Without it fly looks for
+  # deploy/api/Dockerfile and stops with "dockerfile not found".
+  dockerfile = "../api/Dockerfile"
 
 [env]
   ENV = "production"
